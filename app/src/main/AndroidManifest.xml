@@ -10,7 +10,8 @@
         android:allowBackup="true"
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="Pasiflonet"
-        android:theme="@style/Theme.Material3.DayNight.NoActionBar">
+        android:theme="@style/Theme.Material3.DayNight.NoActionBar"
+        tools:replace="android:label">
 
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
