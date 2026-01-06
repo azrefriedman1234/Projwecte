@@ -1,23 +1,23 @@
 package com.pasiflonet.mobile
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.pasiflonet.mobile.databinding.ActivityDetailsBinding
-import com.pasiflonet.mobile.utils.DataStoreRepo
 import com.pasiflonet.mobile.utils.MediaProcessor
-import kotlinx.coroutines.Dispatchers
+import com.pasiflonet.mobile.utils.DataStoreRepo
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.UUID
 
 class DetailsActivity : AppCompatActivity() {
     private lateinit var binding: ActivityDetailsBinding
-    private var filePath: String? = null
+    private var currentFilePath: String? = null
     private var isVideo: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,45 +25,41 @@ class DetailsActivity : AppCompatActivity() {
         binding = ActivityDetailsBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        filePath = intent.getStringExtra("FILE_PATH")
-        isVideo = intent.getBooleanExtra("IS_VIDEO", false) // Fixed: default false
+        currentFilePath = intent.getStringExtra("FILE_PATH")
+        isVideo = intent.getBooleanExtra("IS_VIDEO", false)
 
-        if (filePath == null) return
-
-        if (!isVideo) {
-            binding.previewImage.setImageURI(Uri.fromFile(File(filePath!!)))
-        }
-
+        setupPreview()
+        
         binding.btnUndo.setOnClickListener { binding.overlayView.undo() }
         binding.btnClear.setOnClickListener { binding.overlayView.clear() }
-        binding.btnSend.setOnClickListener { processAndSend() }
+        binding.btnSend.setOnClickListener { processAndFinish() }
     }
 
-    private fun processAndSend() = lifecycleScope.launch(Dispatchers.IO) {
-        val repo = DataStoreRepo(this@DetailsActivity)
-        val logoUriStr = repo.logoUri.first()
-        val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
-        val outFile = File(cacheDir, "out_${UUID.randomUUID()}.jpg")
+    private fun setupPreview() {
+        currentFilePath?.let {
+            val bitmap = BitmapFactory.decodeFile(it)
+            binding.previewImage.setImageBitmap(bitmap)
+        }
+    }
 
-        try {
-            runOnUiThread { Toast.makeText(this@DetailsActivity, "Processing...", Toast.LENGTH_SHORT).show() }
+    private fun processAndFinish() {
+        lifecycleScope.launch {
+            val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.jpg").absolutePath
+            val logoUri = DataStoreRepo(this@DetailsActivity).logoUri.first()?.let { Uri.parse(it) }
             
-            if (!isVideo) {
+            try {
                 MediaProcessor.processImage(
-                    this@DetailsActivity, filePath!!, outFile.absolutePath,
-                    binding.overlayView.getRectsRelative(), logoUri
+                    context = this@DetailsActivity,
+                    inputPath = currentFilePath!!,
+                    outputPath = outPath,
+                    blurRects = binding.overlayView.getBlurRects(),
+                    logoUri = logoUri
                 )
-            } else {
-                 MediaProcessor.processVideo(
-                    this@DetailsActivity, Uri.fromFile(File(filePath!!)), outFile.absolutePath, logoUri
-                )
+                Toast.makeText(this@DetailsActivity, "Saved to $outPath", Toast.LENGTH_LONG).show()
+                finish()
+            } catch (e: Exception) {
+                Toast.makeText(this@DetailsActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             }
-
-            withContext(Dispatchers.Main) {
-                Toast.makeText(this@DetailsActivity, "Done! Size: ${outFile.length()}", Toast.LENGTH_LONG).show()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 }

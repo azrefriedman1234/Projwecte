@@ -8,80 +8,46 @@ import android.view.View
 
 data class BlurRect(val rect: RectF)
 
-class OverlayView @JvmOverloads constructor(
-    context: Context, attrs: AttributeSet? = null
-) : View(context, attrs) {
-
+class OverlayView(context: Context, attrs: AttributeSet?) : View(context, attrs) {
+    private val paths = mutableListOf<Path>()
+    private var currentPath = Path()
     private val paint = Paint().apply {
-        color = Color.RED
+        color = Color.parseColor("#80FFFFFF")
         style = Paint.Style.STROKE
-        strokeWidth = 5f
-    }
-    
-    private val fillPaint = Paint().apply {
-        color = Color.parseColor("#44FF0000") 
-        style = Paint.Style.FILL
-    }
-
-    private val rects = mutableListOf<BlurRect>()
-    private var currentRect: RectF? = null
-    private var startX = 0f
-    private var startY = 0f
-
-    fun getRectsRelative(): List<BlurRect> {
-        return rects.map { 
-            BlurRect(RectF(it.rect.left / width, it.rect.top / height, it.rect.right / width, it.rect.bottom / height))
-        }
-    }
-
-    fun clear() {
-        rects.clear()
-        invalidate()
-    }
-    
-    fun undo() {
-        if (rects.isNotEmpty()) {
-            rects.removeAt(rects.lastIndex)
-            invalidate()
-        }
+        strokeWidth = 60f
+        strokeJoin = Paint.Join.ROUND
+        strokeCap = Paint.Cap.ROUND
     }
 
     override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        for (r in rects) {
-            canvas.drawRect(r.rect, fillPaint)
-            canvas.drawRect(r.rect, paint)
-        }
-        currentRect?.let {
-            canvas.drawRect(it, fillPaint)
-            canvas.drawRect(it, paint)
-        }
+        paths.forEach { canvas.drawPath(it, paint) }
+        canvas.drawPath(currentPath, paint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val x = event.x
+        val y = event.y
         when (event.action) {
-            MotionEvent.ACTION_DOWN -> {
-                startX = event.x
-                startY = event.y
-                currentRect = RectF(startX, startY, startX, startY)
-                return true
-            }
-            MotionEvent.ACTION_MOVE -> {
-                currentRect?.let {
-                    it.right = event.x
-                    it.bottom = event.y
-                    it.sort()
-                    invalidate()
-                }
-            }
+            MotionEvent.ACTION_DOWN -> currentPath.moveTo(x, y)
+            MotionEvent.ACTION_MOVE -> currentPath.lineTo(x, y)
             MotionEvent.ACTION_UP -> {
-                currentRect?.let {
-                    rects.add(BlurRect(it))
-                    currentRect = null
-                    invalidate()
-                }
+                paths.add(Path(currentPath))
+                currentPath.reset()
             }
         }
-        return super.onTouchEvent(event)
+        invalidate()
+        return true
+    }
+
+    fun undo() { if (paths.isNotEmpty()) { paths.removeAt(paths.size - 1); invalidate() } }
+    fun clear() { paths.clear(); invalidate() }
+    
+    fun getBlurRects(): List<BlurRect> {
+        return paths.map { path ->
+            val rect = RectF()
+            path.computeBounds(rect, true)
+            // Normalize coordinates relative to view size
+            BlurRect(RectF(rect.left / width, rect.top / height, rect.right / width, rect.bottom / height))
+        }
     }
 }
