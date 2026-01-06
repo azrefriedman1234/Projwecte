@@ -49,17 +49,16 @@ dependencies {
     // Lifecycle
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     
-    // Coil
+    // Coil (Image Loading)
     implementation("io.coil-kt:coil:2.5.0")
-
-    // Media3
-    implementation("androidx.media3:media3-transformer:1.2.1")
-    implementation("androidx.media3:media3-common:1.2.1")
-    implementation("androidx.media3:media3-effect:1.2.1")
     
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    
+    // Guava (נדרש לפעמים על ידי Media3, משאירים אותו אונליין כי הוא קטן ויציב)
+    implementation("com.google.guava:guava:31.1-android")
 
-    // TDLib Local AAR (Direct File Reference)
-    implementation(files("libs/td-1.8.56.aar"))
+    // --- LOCAL LIBRARIES (Offline) ---
+    // טוען את כל קבצי ה-AAR מתיקיית libs באופן אוטומטי
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 }

@@ -18,15 +18,15 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # וידוא שה-AAR נמצא (Debugging)
-    - name: Check AAR existence
-      run: ls -R app/libs
+    # הדפסת רשימת הקבצים כדי לוודא שה-AARים עלו
+    - name: Verify Local Libs
+      run: ls -lh app/libs/
 
     - name: Build with Gradle
       uses: gradle/gradle-build-action@v2
       with:
         gradle-version: 8.0
-        # --no-daemon חוסך זיכרון בשרתים של גיטהאב
+        # --offline אומר לגריידל לנסות לא להוריד דברים אם אפשר (למרות שחלק מהתלויות הקטנות ירדו)
         arguments: assembleDebug --stacktrace --no-daemon
 
     - name: Upload APK
