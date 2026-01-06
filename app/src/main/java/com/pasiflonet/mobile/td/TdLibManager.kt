@@ -12,8 +12,6 @@ import java.util.concurrent.ConcurrentHashMap
 object TdLibManager {
     private var client: Client? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var currentApiId: Int = 0
-    private var currentApiHash: String = ""
 
     private val _authState = MutableStateFlow<TdApi.AuthorizationState?>(null)
     val authState: StateFlow<TdApi.AuthorizationState?> = _authState
@@ -29,15 +27,12 @@ object TdLibManager {
 
     fun init(context: Context, apiId: Int, apiHash: String) {
         if (client != null) return
-        currentApiId = apiId
-        currentApiHash = apiHash
-        
         client = Client.create({ update ->
             scope.launch { handleUpdate(context, update) }
         }, null, null)
     }
 
-    private fun handleUpdate(context: Context, update: TdApi.Object) {
+    private suspend fun handleUpdate(context: Context, update: TdApi.Object) {
         when (update) {
             is TdApi.UpdateAuthorizationState -> {
                 _authState.value = update.authorizationState
@@ -45,11 +40,28 @@ object TdLibManager {
                     sendParams(context)
                 }
             }
-            is TdApi.UpdateNewChat -> chatsMap[update.chat.id] = update.chat
+            is TdApi.UpdateNewChat -> {
+                chatsMap[update.chat.id] = update.chat
+                refreshChatList()
+            }
             is TdApi.UpdateChatPosition -> {
                 if (update.position.list is TdApi.ChatListMain) {
                     chatPositions[update.chatId] = update.position.order
                     refreshChatList()
+                }
+            }
+            is TdApi.UpdateChatLastMessage -> {
+                chatsMap[update.chatId]?.let {
+                    it.lastMessage = update.lastMessage
+                    refreshChatList()
+                }
+            }
+            is TdApi.UpdateNewMessage -> {
+                // עדכון הודעות בתוך צ'אט פתוח
+                val current = _currentMessages.value.toMutableList()
+                if (current.isNotEmpty() && current.first().chatId == update.message.chatId) {
+                    current.add(0, update.message)
+                    _currentMessages.value = current
                 }
             }
             is TdApi.UpdateFile -> {
@@ -63,13 +75,16 @@ object TdLibManager {
     private fun sendParams(context: Context) {
         val dbDir = File(context.filesDir, "tdlib").absolutePath
         val filesDir = File(context.filesDir, "tdlib_files").absolutePath
-        val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, currentApiId, currentApiHash, "en", "Android", "1.0", "1.0")
+        val apiId = 94575 // ברירת מחדל אם לא הוזן, אבל עדיף להשתמש במה ששמרנו
+        val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, apiId, "a3406de6ea6f6634d0b115682859e988", "en", "Android", "1.0", "1.0")
         client?.send(params, null)
     }
 
     private fun refreshChatList() {
-        val sorted = chatsMap.values.filter { chatPositions.containsKey(it.id) }.sortedByDescending { chatPositions[it.id] }
-        _chatList.value = sorted
+        val sorted = chatsMap.values
+            .filter { chatPositions.containsKey(it.id) }
+            .sortedByDescending { chatPositions[it.id] ?: 0L }
+        _chatList.value = sorted.toList()
     }
 
     fun sendPhone(phone: String) = client?.send(TdApi.SetAuthenticationPhoneNumber(phone, null), null)
@@ -82,12 +97,11 @@ object TdLibManager {
             }
         }
     }
-    fun downloadFile(fileId: Int) {
-        client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
-    }
+    fun downloadFile(fileId: Int) = client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
+    
     private fun downloadMediaIfNeeded(msg: TdApi.Message) {
         val fileId = when (val c = msg.content) {
-            is TdApi.MessagePhoto -> c.photo.sizes.last().photo.id
+            is TdApi.MessagePhoto -> c.photo.sizes.lastOrNull()?.photo?.id
             is TdApi.MessageVideo -> c.video.video.id
             else -> null
         }

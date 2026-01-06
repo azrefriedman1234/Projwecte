@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -43,19 +42,16 @@ class MainActivity : AppCompatActivity() {
                     DataStoreRepo(this@MainActivity).saveApi(id, hash)
                     checkApiAndInit()
                 }
-            } else {
-                Toast.makeText(this, "Please enter valid API ID and Hash", Toast.LENGTH_SHORT).show()
             }
         }
         
-        binding.btnSendCode.setOnClickListener {
-            val phone = binding.etPhone.text.toString()
-            if (phone.isNotEmpty()) TdLibManager.sendPhone(phone)
-        }
+        binding.btnSendCode.setOnClickListener { TdLibManager.sendPhone(binding.etPhone.text.toString()) }
+        binding.btnVerify.setOnClickListener { TdLibManager.sendCode(binding.etCode.text.toString()) }
         
-        binding.btnVerify.setOnClickListener {
-            val code = binding.etCode.text.toString()
-            if (code.isNotEmpty()) TdLibManager.sendCode(code)
+        // כפתור הגדרות - וידוא שהוא לחיץ תמיד כשהוא גלוי
+        binding.btnSettings.setOnClickListener {
+            val intent = Intent(this, SettingsActivity::class.java)
+            startActivity(intent)
         }
     }
 
@@ -64,13 +60,10 @@ class MainActivity : AppCompatActivity() {
             val repo = DataStoreRepo(this@MainActivity)
             val apiId = repo.apiId.first()
             val apiHash = repo.apiHash.first()
-
             if (apiId != null && apiHash != null) {
                 binding.apiContainer.visibility = View.GONE
                 TdLibManager.init(this@MainActivity, apiId, apiHash)
                 observeData()
-            } else {
-                binding.apiContainer.visibility = View.VISIBLE
             }
         }
     }
@@ -83,7 +76,9 @@ class MainActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             TdLibManager.chatList.collect { chats ->
-                runOnUiThread { chatsAdapter.submitList(chats) }
+                runOnUiThread { 
+                    chatsAdapter.submitList(chats)
+                }
             }
         }
     }
@@ -92,22 +87,14 @@ class MainActivity : AppCompatActivity() {
         when (state) {
             is TdApi.AuthorizationStateWaitPhoneNumber -> {
                 binding.loginContainer.visibility = View.VISIBLE
-                binding.etPhone.visibility = View.VISIBLE
-                binding.btnSendCode.visibility = View.VISIBLE
-                binding.tvStatus.text = "API Configured. Enter Phone Number."
-            }
-            is TdApi.AuthorizationStateWaitCode -> {
-                binding.loginContainer.visibility = View.VISIBLE
-                binding.etPhone.visibility = View.GONE
-                binding.btnSendCode.visibility = View.GONE
-                binding.etCode.visibility = View.VISIBLE
-                binding.btnVerify.visibility = View.VISIBLE
-                binding.tvStatus.text = "Enter Code"
+                binding.rvChats.visibility = View.GONE
+                binding.btnSettings.visibility = View.GONE
             }
             is TdApi.AuthorizationStateReady -> {
                 binding.loginContainer.visibility = View.GONE
                 binding.rvChats.visibility = View.VISIBLE
                 binding.btnSettings.visibility = View.VISIBLE
+                binding.btnSettings.bringToFront() // הבטחת נגישות
             }
             else -> {}
         }
@@ -115,13 +102,18 @@ class MainActivity : AppCompatActivity() {
 
     inner class ChatsAdapter : RecyclerView.Adapter<ChatsAdapter.ChatViewHolder>() {
         private var chats = listOf<TdApi.Chat>()
-        fun submitList(newChats: List<TdApi.Chat>) { chats = newChats; notifyDataSetChanged() }
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = ChatViewHolder(ItemChatBinding.inflate(LayoutInflater.from(parent.context), parent, false))
+        fun submitList(newChats: List<TdApi.Chat>) {
+            chats = newChats
+            notifyDataSetChanged()
+        }
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = 
+            ChatViewHolder(ItemChatBinding.inflate(LayoutInflater.from(parent.context), parent, false))
         override fun getItemCount() = chats.size
         override fun onBindViewHolder(holder: ChatViewHolder, position: Int) {
             val chat = chats[position]
             holder.binding.tvChatTitle.text = chat.title
-            holder.binding.tvInitials.text = chat.title.take(1).uppercase()
+            holder.binding.tvInitials.text = chat.title.take(1)
+            holder.binding.tvLastMessage.text = chat.lastMessage?.let { "New message" } ?: "No messages"
             holder.itemView.setOnClickListener {
                 startActivity(Intent(this@MainActivity, ChatActivity::class.java).apply {
                     putExtra("CHAT_ID", chat.id)

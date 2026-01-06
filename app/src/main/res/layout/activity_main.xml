@@ -10,36 +10,12 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:visibility="visible"
+        android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Telegram API Setup"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="16dp"/>
-
-        <EditText
-            android:id="@+id/etApiId"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="API ID (e.g. 1234567)"
-            android:inputType="number" />
-
-        <EditText
-            android:id="@+id/etApiHash"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="API Hash (e.g. abc123def...)" />
-
-        <Button
-            android:id="@+id/btnSaveApi"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Save &amp; Continue" />
+        <EditText android:id="@+id/etApiId" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API ID" android:inputType="number" />
+        <EditText android:id="@+id/etApiHash" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API Hash" />
+        <Button android:id="@+id/btnSaveApi" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Save API" />
     </LinearLayout>
 
     <LinearLayout
@@ -50,47 +26,17 @@
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent">
-
-        <EditText
-            android:id="@+id/etPhone"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Phone Number (+972...)"
-            android:inputType="phone" />
-
-        <Button
-            android:id="@+id/btnSendCode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Send Code" />
-
-        <EditText
-            android:id="@+id/etCode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Code"
-            android:inputType="number"
-            android:visibility="gone" />
-
-        <Button
-            android:id="@+id/btnVerify"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Verify"
-            android:visibility="gone" />
-            
-        <TextView
-            android:id="@+id/tvStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:textColor="#FF0000"
-            android:paddingTop="10dp"/>
+        <EditText android:id="@+id/etPhone" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Phone" android:inputType="phone" />
+        <Button android:id="@+id/btnSendCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Send Code" />
+        <EditText android:id="@+id/etCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Code" android:inputType="number" />
+        <Button android:id="@+id/btnVerify" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Verify" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvChats"
         android:layout_width="match_parent"
         android:layout_height="0dp"
+        android:layout_marginBottom="8dp"
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toTopOf="@id/btnSettings" />
@@ -101,6 +47,7 @@
         android:layout_height="wrap_content"
         android:text="Settings / Watermark"
         android:visibility="gone"
+        android:elevation="10dp"
         app:layout_constraintBottom_toBottomOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
