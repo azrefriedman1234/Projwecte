@@ -25,8 +25,8 @@ jobs:
     - name: Build with Gradle
       uses: gradle/gradle-build-action@v2
       with:
-        gradle-version: 8.0
-        # --offline אומר לגריידל לנסות לא להוריד דברים אם אפשר (למרות שחלק מהתלויות הקטנות ירדו)
+        # התיקון: גרסה 8.2 בתוך גרשיים כדי למנוע המרה למספר
+        gradle-version: '8.2'
         arguments: assembleDebug --stacktrace --no-daemon
 
     - name: Upload APK
