@@ -12,6 +12,17 @@ import java.util.concurrent.ConcurrentHashMap
 object TdLibManager {
     private var client: Client? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var currentApiId: Int = 0
+    private var currentApiHash: String = ""
+
+    init {
+        // טעינת הספרייה של טלגרם - קריטי למניעת מסך לבן/קריסה
+        try {
+            System.loadLibrary("tdjni")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     private val _authState = MutableStateFlow<TdApi.AuthorizationState?>(null)
     val authState: StateFlow<TdApi.AuthorizationState?> = _authState
@@ -27,35 +38,47 @@ object TdLibManager {
 
     fun init(context: Context, apiId: Int, apiHash: String) {
         if (client != null) return
+        currentApiId = apiId
+        currentApiHash = apiHash
+        
         client = Client.create({ update ->
-            scope.launch { handleUpdate(context, update, apiId, apiHash) }
+            scope.launch { handleUpdate(context, update) }
         }, null, null)
     }
 
-    private suspend fun handleUpdate(context: Context, update: TdApi.Object, apiId: Int, apiHash: String) {
+    private suspend fun handleUpdate(context: Context, update: TdApi.Object) {
         when (update) {
             is TdApi.UpdateAuthorizationState -> {
                 _authState.value = update.authorizationState
                 if (update.authorizationState is TdApi.AuthorizationStateWaitTdlibParameters) {
-                    val dbDir = File(context.filesDir, "tdlib").absolutePath
-                    val filesDir = File(context.filesDir, "tdlib_files").absolutePath
-                    val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, apiId, apiHash, "en", "Android", "1.0", "1.0")
-                    client?.send(params, null)
+                    sendParams(context)
                 }
             }
-            is TdApi.UpdateNewChat -> chatsMap[update.chat.id] = update.chat
+            is TdApi.UpdateNewChat -> {
+                chatsMap[update.chat.id] = update.chat
+                refreshChatList()
+            }
             is TdApi.UpdateChatPosition -> {
                 if (update.position.list is TdApi.ChatListMain) {
                     chatPositions[update.chatId] = update.position.order
                     refreshChatList()
                 }
             }
-            is TdApi.UpdateFile -> {
-                if (update.file.local.isDownloadingCompleted) {
-                    _currentMessages.value = _currentMessages.value.toList()
+            is TdApi.UpdateNewMessage -> {
+                val current = _currentMessages.value.toMutableList()
+                if (current.isNotEmpty() && current.first().chatId == update.message.chatId) {
+                    current.add(0, update.message)
+                    _currentMessages.value = current
                 }
             }
         }
+    }
+
+    private fun sendParams(context: Context) {
+        val dbDir = File(context.filesDir, "tdlib").absolutePath
+        val filesDir = File(context.filesDir, "tdlib_files").absolutePath
+        val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, currentApiId, currentApiHash, "en", "Android", "1.0", "1.0")
+        client?.send(params, null)
     }
 
     private fun refreshChatList() {
@@ -70,22 +93,8 @@ object TdLibManager {
         client?.send(TdApi.GetChatHistory(chatId, 0, 0, 50, false)) { res ->
             if (res is TdApi.Messages) {
                 _currentMessages.value = res.messages.toList()
-                res.messages.forEach { downloadMediaIfNeeded(it) }
             }
         }
-    }
-
-    fun downloadFile(fileId: Int) {
-        client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
-    }
-
-    private fun downloadMediaIfNeeded(msg: TdApi.Message) {
-        val fileId = when (val c = msg.content) {
-            is TdApi.MessagePhoto -> c.photo.sizes.lastOrNull()?.photo?.id
-            is TdApi.MessageVideo -> c.video.video.id
-            else -> null
-        }
-        fileId?.let { downloadFile(it) }
     }
 
     fun sendFinalMessage(username: String, text: String, filePath: String?, isVideo: Boolean) {
@@ -95,12 +104,8 @@ object TdLibManager {
                 val content = if (filePath != null) {
                     val file = TdApi.InputFileLocal(filePath)
                     if (isVideo) {
-                        // חובה בדיוק 13 פרמטרים לפי השגיאה:
-                        // file, thumbnail, addedStickerFile, duration, streamingDurations, width, height, orientation, supportsStreaming, caption, clearDraft, selfDestructType, hasSpoiler
                         TdApi.InputMessageVideo(file, null, null, 0, intArrayOf(), 0, 0, 0, true, formattedText, false, null, false)
                     } else {
-                        // חובה בדיוק 9 פרמטרים לפי השגיאה:
-                        // file, thumbnail, addedStickerFileIds, width, height, caption, showCaptionAboveMedia, selfDestructType, hasSpoiler
                         TdApi.InputMessagePhoto(file, null, intArrayOf(), 0, 0, formattedText, false, null, false)
                     }
                 } else {
