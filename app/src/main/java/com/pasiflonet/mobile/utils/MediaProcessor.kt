@@ -1,18 +1,23 @@
 package com.pasiflonet.mobile.utils
 
 import android.content.Context
-import android.graphics.*
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.net.Uri
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.TextureOverlay
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import androidx.media3.transformer.Transformer.Listener
 import com.pasiflonet.mobile.ui.BlurRect
+import com.google.common.collect.ImmutableList
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.coroutines.resume
@@ -42,6 +47,7 @@ object MediaProcessor {
             val bottom = (relative.rect.bottom * h).toInt().coerceAtMost(h)
             
             if (right > left && bottom > top) {
+                // Simple pixelation blur logic
                 val subset = Bitmap.createBitmap(original, left, top, right - left, bottom - top)
                 val small = Bitmap.createScaledBitmap(subset, subset.width / 10 + 1, subset.height / 10 + 1, true)
                 val blurred = Bitmap.createScaledBitmap(small, subset.width, subset.height, false)
@@ -57,7 +63,9 @@ object MediaProcessor {
                 if (logo != null) {
                     canvas.drawBitmap(logo, 20f, 20f, null) 
                 }
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
         FileOutputStream(File(outputPath)).use { out ->
@@ -76,9 +84,13 @@ object MediaProcessor {
         val effects = mutableListOf<Effect>()
         if (logoUri != null) {
              try {
+                // Fixed: Explicit type usage for Media3 Overlay
                 val overlay = BitmapOverlay.createFromUri(context, logoUri)
-                effects.add(OverlayEffect(listOf(overlay)))
-            } catch (e: Exception) {}
+                val overlayEffect = OverlayEffect(ImmutableList.of(overlay as TextureOverlay))
+                effects.add(overlayEffect)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
         val transformer = Transformer.Builder(context)
@@ -87,14 +99,17 @@ object MediaProcessor {
 
         val mediaItem = MediaItem.fromUri(inputUri)
         val editedMediaItem = androidx.media3.transformer.EditedMediaItem.Builder(mediaItem)
-            .setEffects(androidx.media3.transformer.Effects(emptyList(), effects))
+            .setEffects(androidx.media3.transformer.Effects(
+                ImmutableList.of(), 
+                ImmutableList.copyOf(effects)
+            ))
             .build()
 
         transformer.addListener(object : Listener {
-            override fun onCompleted(composition: Composition, result: androidx.media3.transformer.ExportResult) {
+            override fun onCompleted(composition: Composition, result: ExportResult) {
                 continuation.resume(File(outputPath))
             }
-            override fun onError(composition: Composition, result: androidx.media3.transformer.ExportResult, exception: ExportException) {
+            override fun onError(composition: Composition, result: ExportResult, exception: ExportException) {
                 continuation.resumeWithException(exception)
             }
         })

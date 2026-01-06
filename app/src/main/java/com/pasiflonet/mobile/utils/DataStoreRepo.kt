@@ -6,13 +6,13 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
+// הגדרה יחידה של ה-DataStore למניעת התנגשויות
 val Context.dataStore by preferencesDataStore(name = "settings")
 
 class DataStoreRepo(private val context: Context) {
     companion object {
         val LOGO_URI = stringPreferencesKey("logo_uri")
         val LOGO_ENABLED = booleanPreferencesKey("logo_enabled")
-        val SCALE = floatPreferencesKey("scale")
     }
 
     val logoUri: Flow<String?> = context.dataStore.data.map { it[LOGO_URI] }
