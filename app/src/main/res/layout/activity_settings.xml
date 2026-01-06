@@ -6,24 +6,49 @@
     android:padding="16dp">
 
     <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
-        android:text="Target Settings" android:textSize="20sp" android:textStyle="bold" />
+        android:text="Channel Settings" android:textSize="20sp" android:textStyle="bold" />
 
     <EditText
         android:id="@+id/etTargetUsername"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Target Channel Username (e.g. @azrinews)"
+        android:hint="Target Channel (@azrinews)"
         android:layout_marginTop="16dp"/>
 
     <Button android:id="@+id/btnSaveSettings" android:layout_width="match_parent" 
-        android:layout_height="wrap_content" android:text="Save Target Channel" />
+        android:layout_height="wrap_content" android:text="Save Destination" />
 
     <View android:layout_width="match_parent" android:layout_height="1dp" 
         android:background="#CCCCCC" android:layout_marginTop="24dp" />
 
-    <Button android:id="@+id/btnPickLogo" android:layout_width="match_parent" 
-        android:layout_height="wrap_content" android:text="Pick Logo Image" android:layout_marginTop="16dp"/>
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
+        android:text="Media Tools" android:textStyle="bold" android:layout_marginTop="16dp" />
 
-    <ImageView android:id="@+id/ivCurrentLogo" android:layout_width="100dp" 
-        android:layout_height="100dp" android:layout_gravity="center" android:layout_marginTop="16dp"/>
+    <Button android:id="@+id/btnPickLogo" android:layout_width="match_parent" 
+        android:layout_height="wrap_content" android:text="Change Watermark Logo" />
+
+    <ImageView android:id="@+id/ivCurrentLogo" android:layout_width="80dp" 
+        android:layout_height="80dp" android:layout_gravity="center" android:layout_marginTop="8dp"/>
+
+    <View android:layout_width="match_parent" android:layout_height="1dp" 
+        android:background="#CCCCCC" android:layout_marginTop="24dp" />
+
+    <Button
+        android:id="@+id/btnClearCache"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Clear Temporary Files"
+        android:textColor="#FF5555"
+        android:layout_marginTop="16dp"/>
+
+    <TextView
+        android:id="@+id/tvCacheInfo"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="Deletes downloaded media and processed images"
+        android:textSize="12sp"
+        android:textColor="#888888"/>
+
 </LinearLayout>
