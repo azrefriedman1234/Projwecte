@@ -1,26 +1,19 @@
-// Top-level build file
 buildscript {
     repositories {
-        // מירור מהיר של עליבאבא (Aliyun) לגוגל ו-Public
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        gradlePluginPortal()
+        google()
+        mavenCentral()
     }
     dependencies {
-        classpath("com.android.tools.build:gradle:8.2.0")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.20")
+        // שינמוך קל לגרסה סופר-יציבה של הפלאגין
+        classpath("com.android.tools.build:gradle:8.1.1")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0")
     }
 }
 
 allprojects {
     repositories {
-        // סדר חשיבות: קודם כל Aliyun (לא נחסם), אחר כך JitPack, ובסוף המקוריים לגיבוי
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
-        maven { url = uri("https://jitpack.io") }
-        
-        // גיבוי למקרה שמשהו חסר במירור
         google()
         mavenCentral()
+        maven { url = uri("https://jitpack.io") }
     }
 }

@@ -18,12 +18,16 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    # וידוא שה-AAR נמצא (Debugging)
+    - name: Check AAR existence
+      run: ls -R app/libs
+
     - name: Build with Gradle
       uses: gradle/gradle-build-action@v2
       with:
-        gradle-version: 8.2
-        # הוספתי --refresh-dependencies כדי לעקוף שגיאות רשת
-        arguments: assembleDebug --stacktrace --refresh-dependencies
+        gradle-version: 8.0
+        # --no-daemon חוסך זיכרון בשרתים של גיטהאב
+        arguments: assembleDebug --stacktrace --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
