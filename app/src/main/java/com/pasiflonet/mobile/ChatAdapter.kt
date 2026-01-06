@@ -6,13 +6,19 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import com.pasiflonet.mobile.databinding.ItemMessageBinding
+import com.pasiflonet.mobile.td.TdLibManager
 import org.drinkless.tdlib.TdApi
 import java.io.File
 
 class ChatAdapter(
-    private val messages: List<TdApi.Message>,
-    private val onDetailsClick: (String, Boolean) -> Unit // Callback function
+    private var messages: List<TdApi.Message>,
+    private val onDetailsClick: (String, Boolean) -> Unit
 ) : RecyclerView.Adapter<ChatAdapter.MessageViewHolder>() {
+
+    fun updateList(newMessages: List<TdApi.Message>) {
+        messages = newMessages
+        notifyDataSetChanged()
+    }
 
     class MessageViewHolder(val binding: ItemMessageBinding) : RecyclerView.ViewHolder(binding.root)
 
@@ -25,59 +31,77 @@ class ChatAdapter(
         val message = messages[position]
         val content = message.content
 
-        // ברירת מחדל: הסתרת תמונה וכפתור
         holder.binding.cardThumbnail.visibility = View.GONE
         holder.binding.btnProcess.visibility = View.GONE
-        holder.binding.tvContent.text = "Unsupported message type"
+        holder.binding.ivThumbnail.setImageDrawable(null)
 
         var filePath: String? = null
         var isVideo = false
+        var fileIdToDownload: Int? = null
 
-        // בדיקה: האם זו הודעת טקסט, תמונה או וידאו?
         when (content) {
             is TdApi.MessageText -> {
                 holder.binding.tvContent.text = content.text.text
-                // אם אתה רוצה כפתור גם לטקסט, מחק את ה-if למטה. 
-                // כרגע: מציג כפתור רק למדיה.
             }
             is TdApi.MessagePhoto -> {
-                holder.binding.tvContent.text = "Photo"
+                holder.binding.tvContent.text = ""
                 holder.binding.cardThumbnail.visibility = View.VISIBLE
                 
-                // שליפת הנתיב המקומי של התמונה הגדולה ביותר
-                val photoSize = content.photo.sizes.lastOrNull()
-                val localPath = photoSize?.photo?.local?.path
-                
-                if (localPath != null && File(localPath).exists()) {
-                    filePath = localPath
-                    holder.binding.ivThumbnail.load(File(localPath))
-                } else {
-                    // כאן צריך להוסיף לוגיקה להורדת הקובץ מ-TDLib אם הוא לא קיים
-                    holder.binding.ivThumbnail.setBackgroundColor(0xFFCCCCCC.toInt())
+                val bigPhoto = content.photo.sizes.lastOrNull()?.photo
+                if (bigPhoto != null) {
+                    val path = bigPhoto.local.path
+                    if (path.isNotEmpty() && File(path).exists()) {
+                        // הקובץ קיים! הצג תמונה וכפתור
+                        filePath = path
+                        holder.binding.ivThumbnail.load(File(path))
+                    } else {
+                        // הקובץ לא קיים, סימן להורדה
+                        holder.binding.ivThumbnail.setBackgroundColor(0xFFEEEEEE.toInt())
+                        fileIdToDownload = bigPhoto.id
+                    }
                 }
                 isVideo = false
             }
             is TdApi.MessageVideo -> {
-                holder.binding.tvContent.text = "Video (${content.video.duration}s)"
+                holder.binding.tvContent.text = "Video"
                 holder.binding.cardThumbnail.visibility = View.VISIBLE
                 
-                val localPath = content.video.video.local?.path
-                if (localPath != null && File(localPath).exists()) {
-                    filePath = localPath
-                    // טעינת Thumbnail של הוידאו
+                val videoFile = content.video.video
+                val path = videoFile.local.path
+                
+                if (path.isNotEmpty() && File(path).exists()) {
+                    filePath = path
+                    // נסה לטעון תמונה ממוזערת אם יש
                     val thumbPath = content.video.thumbnail?.file?.local?.path
-                    if (thumbPath != null) holder.binding.ivThumbnail.load(File(thumbPath))
+                    if (thumbPath != null && File(thumbPath).exists()) {
+                         holder.binding.ivThumbnail.load(File(thumbPath))
+                    } else {
+                         holder.binding.ivThumbnail.setBackgroundColor(0xFF000000.toInt())
+                    }
+                } else {
+                    fileIdToDownload = videoFile.id
                 }
                 isVideo = true
             }
+            else -> holder.binding.tvContent.text = "Message Type: ${content.javaClass.simpleName}"
         }
 
-        // אם יש קובץ מדיה - הצג את כפתור העריכה!
+        // לוגיקה חכמה: כפתור עריכה או הורדה
         if (filePath != null) {
+            holder.binding.btnProcess.text = "Edit & Watermark"
             holder.binding.btnProcess.visibility = View.VISIBLE
             holder.binding.btnProcess.setOnClickListener {
                 onDetailsClick(filePath, isVideo)
             }
+        } else if (fileIdToDownload != null) {
+            // אם הקובץ חסר - הצג כפתור הורדה (או הורד אוטומטית)
+            holder.binding.btnProcess.text = "Downloading..."
+            holder.binding.btnProcess.visibility = View.VISIBLE
+            holder.binding.btnProcess.setOnClickListener {
+                 // במקרה של לחיצה ידנית (אם ההורדה האוטומטית נכשלה)
+                 TdLibManager.downloadFile(fileIdToDownload)
+            }
+            // הערה: TdLibManager כבר מנסה להוריד אוטומטית כשההודעה נטענת
         }
     }
 
