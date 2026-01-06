@@ -30,12 +30,9 @@ class DetailsActivity : AppCompatActivity() {
 
         currentFilePath = intent.getStringExtra("FILE_PATH")
         isVideo = intent.getBooleanExtra("IS_VIDEO", false)
-        val originalText = intent.getStringExtra("MESSAGE_TEXT") ?: ""
-
+        
         setupPreview()
         setupDraggableLogo()
-        
-        binding.etMessageText.setText(originalText)
         
         binding.btnSend.setOnClickListener { processAndSend() }
         binding.btnUndo.setOnClickListener { binding.overlayView.undo() }
@@ -77,21 +74,14 @@ class DetailsActivity : AppCompatActivity() {
             if (includeMedia && currentFilePath != null) {
                 val outPath = File(cacheDir, "final_output.jpg").absolutePath
                 val logoUri = repo.logoUri.first()?.let { Uri.parse(it) }
-                
                 val logoX = binding.ivDraggableLogo.x / binding.previewContainer.width
                 val logoY = binding.ivDraggableLogo.y / binding.previewContainer.height
 
-                MediaProcessor.processImage(
-                    this@DetailsActivity, currentFilePath!!, outPath,
-                    binding.overlayView.getBlurRects(), logoUri, logoX, logoY
-                )
+                MediaProcessor.processImage(this@DetailsActivity, currentFilePath!!, outPath, binding.overlayView.getBlurRects(), logoUri, logoX, logoY)
                 TdLibManager.sendFinalMessage(target, editedText, outPath, isVideo)
             } else {
-                // שליחת טקסט בלבד
                 TdLibManager.sendFinalMessage(target, editedText, null, false)
             }
-
-            Toast.makeText(this@DetailsActivity, "Message sent to $target", Toast.LENGTH_SHORT).show()
             finish()
         }
     }

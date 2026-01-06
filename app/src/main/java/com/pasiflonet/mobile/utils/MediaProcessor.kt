@@ -8,15 +8,14 @@ import java.io.File
 import java.io.FileOutputStream
 
 object MediaProcessor {
-
     fun processImage(
         context: Context,
         inputPath: String,
         outputPath: String,
         blurRects: List<BlurRect>,
         logoUri: Uri?,
-        logoX: Float, // המיקום האופקי (0.0-1.0) שנקבע בגרירה
-        logoY: Float  // המיקום האנכי (0.0-1.0) שנקבע בגרירה
+        logoX: Float,
+        logoY: Float
     ) {
         val options = BitmapFactory.Options().apply { inMutable = true }
         val original = BitmapFactory.decodeFile(inputPath, options) ?: return
@@ -24,13 +23,11 @@ object MediaProcessor {
         val bW = original.width
         val bH = original.height
 
-        // 1. טשטוש אזורים נבחרים
         blurRects.forEach { relative ->
             val left = (relative.rect.left * bW).toInt().coerceAtLeast(0)
             val top = (relative.rect.top * bH).toInt().coerceAtLeast(0)
             val right = (relative.rect.right * bW).toInt().coerceAtMost(bW)
             val bottom = (relative.rect.bottom * bH).toInt().coerceAtMost(bH)
-            
             val w = right - left
             val h = bottom - top
             if (w > 5 && h > 5) {
@@ -41,28 +38,20 @@ object MediaProcessor {
             }
         }
 
-        // 2. הטבעת הלוגו מההגדרות במיקום שנגרר
         logoUri?.let { uri ->
             try {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
                     val logo = BitmapFactory.decodeStream(stream)
                     if (logo != null) {
-                        // שמירה על יחס גובה-רוחב של הלוגו (רוחב 15% מהתמונה)
                         val targetLogoW = (bW * 0.15).toInt()
                         val targetLogoH = (logo.height * targetLogoW) / logo.width
                         val scaledLogo = Bitmap.createScaledBitmap(logo, targetLogoW, targetLogoH, true)
-                        
-                        // המרת המיקום היחסי מהמסך לפיקסלים בביטמפ המקורי
-                        val finalX = logoX * bW
-                        val finalY = logoY * bH
-                        
-                        canvas.drawBitmap(scaledLogo, finalX, finalY, null)
+                        canvas.drawBitmap(scaledLogo, logoX * bW, logoY * bH, null)
                     }
                 }
             } catch (e: Exception) { e.printStackTrace() }
         }
 
-        // 3. שמירה סופית
         FileOutputStream(File(outputPath)).use { out ->
             original.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }

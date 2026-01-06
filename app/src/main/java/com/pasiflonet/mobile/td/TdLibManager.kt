@@ -28,40 +28,26 @@ object TdLibManager {
     fun init(context: Context, apiId: Int, apiHash: String) {
         if (client != null) return
         client = Client.create({ update ->
-            scope.launch { handleUpdate(context, update) }
+            scope.launch { handleUpdate(context, update, apiId, apiHash) }
         }, null, null)
     }
 
-    private suspend fun handleUpdate(context: Context, update: TdApi.Object) {
+    private suspend fun handleUpdate(context: Context, update: TdApi.Object, apiId: Int, apiHash: String) {
         when (update) {
             is TdApi.UpdateAuthorizationState -> {
                 _authState.value = update.authorizationState
                 if (update.authorizationState is TdApi.AuthorizationStateWaitTdlibParameters) {
-                    sendParams(context)
+                    val dbDir = File(context.filesDir, "tdlib").absolutePath
+                    val filesDir = File(context.filesDir, "tdlib_files").absolutePath
+                    val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, apiId, apiHash, "en", "Android", "1.0", "1.0")
+                    client?.send(params, null)
                 }
             }
-            is TdApi.UpdateNewChat -> {
-                chatsMap[update.chat.id] = update.chat
-                refreshChatList()
-            }
+            is TdApi.UpdateNewChat -> chatsMap[update.chat.id] = update.chat
             is TdApi.UpdateChatPosition -> {
                 if (update.position.list is TdApi.ChatListMain) {
                     chatPositions[update.chatId] = update.position.order
                     refreshChatList()
-                }
-            }
-            is TdApi.UpdateChatLastMessage -> {
-                chatsMap[update.chatId]?.let {
-                    it.lastMessage = update.lastMessage
-                    refreshChatList()
-                }
-            }
-            is TdApi.UpdateNewMessage -> {
-                // עדכון הודעות בתוך צ'אט פתוח
-                val current = _currentMessages.value.toMutableList()
-                if (current.isNotEmpty() && current.first().chatId == update.message.chatId) {
-                    current.add(0, update.message)
-                    _currentMessages.value = current
                 }
             }
             is TdApi.UpdateFile -> {
@@ -72,23 +58,14 @@ object TdLibManager {
         }
     }
 
-    private fun sendParams(context: Context) {
-        val dbDir = File(context.filesDir, "tdlib").absolutePath
-        val filesDir = File(context.filesDir, "tdlib_files").absolutePath
-        val apiId = 94575 // ברירת מחדל אם לא הוזן, אבל עדיף להשתמש במה ששמרנו
-        val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, apiId, "a3406de6ea6f6634d0b115682859e988", "en", "Android", "1.0", "1.0")
-        client?.send(params, null)
-    }
-
     private fun refreshChatList() {
-        val sorted = chatsMap.values
-            .filter { chatPositions.containsKey(it.id) }
-            .sortedByDescending { chatPositions[it.id] ?: 0L }
-        _chatList.value = sorted.toList()
+        val sorted = chatsMap.values.filter { chatPositions.containsKey(it.id) }.sortedByDescending { chatPositions[it.id] }
+        _chatList.value = sorted
     }
 
     fun sendPhone(phone: String) = client?.send(TdApi.SetAuthenticationPhoneNumber(phone, null), null)
     fun sendCode(code: String) = client?.send(TdApi.CheckAuthenticationCode(code), null)
+    
     fun loadChatHistory(chatId: Long) {
         client?.send(TdApi.GetChatHistory(chatId, 0, 0, 50, false)) { res ->
             if (res is TdApi.Messages) {
@@ -97,34 +74,21 @@ object TdLibManager {
             }
         }
     }
-    fun downloadFile(fileId: Int) = client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
-    
+
+    fun downloadFile(fileId: Int) {
+        client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
+    }
+
     private fun downloadMediaIfNeeded(msg: TdApi.Message) {
         val fileId = when (val c = msg.content) {
-            is TdApi.MessagePhoto -> c.photo.sizes.lastOrNull()?.photo?.id
+            is TdApi.MessagePhoto -> c.photo.sizes.last().photo.id
             is TdApi.MessageVideo -> c.video.video.id
             else -> null
         }
         fileId?.let { downloadFile(it) }
     }
-}
 
-    fun sendMediaToUsername(username: String, filePath: String, isVideo: Boolean) {
-        // 1. חיפוש הצ'אט לפי ה-Username
-        client?.send(TdApi.SearchPublicChat(username.replace("@", ""))) { obj ->
-            if (obj is TdApi.Chat) {
-                // 2. שליחת הקובץ
-                val file = TdApi.InputFileLocal(filePath)
-                val content = if (isVideo) {
-                    TdApi.InputMessageVideo(file, null, null, 0, 0, 0, 0, 0, null, 0)
-                } else {
-                    TdApi.InputMessagePhoto(file, null, null, 0, 0, null, 0)
-                }
-                client?.send(TdApi.SendMessage(obj.id, 0, 0, null, null, content), null)
-            }
-        }
-    }
-
+    // פונקציית השליחה המתוקנת עם כל הפרמטרים של גרסה 1.8.56
     fun sendFinalMessage(username: String, text: String, filePath: String?, isVideo: Boolean) {
         client?.send(TdApi.SearchPublicChat(username.replace("@", ""))) { obj ->
             if (obj is TdApi.Chat) {
@@ -132,14 +96,19 @@ object TdLibManager {
                 val content = if (filePath != null) {
                     val file = TdApi.InputFileLocal(filePath)
                     if (isVideo) {
-                        TdApi.InputMessageVideo(file, null, null, 0, 0, 0, 0, 0, formattedText, 0)
+                        // 13 parameters required
+                        TdApi.InputMessageVideo(file, null, null, 0, intArrayOf(), 0, 0, 0, true, formattedText, false, null, false)
                     } else {
-                        TdApi.InputMessagePhoto(file, null, null, 0, 0, formattedText, 0)
+                        // 9 parameters required
+                        TdApi.InputMessagePhoto(file, null, intArrayOf(), 0, 0, formattedText, false, null, false)
                     }
                 } else {
-                    TdApi.InputMessageText(formattedText, false, true)
+                    // 3 parameters required (text, linkPreviewOptions, clearDraft)
+                    TdApi.InputMessageText(formattedText, null, true)
                 }
-                client?.send(TdApi.SendMessage(obj.id, 0, 0, null, null, content), null)
+                // SendMessage requires 6 parameters
+                client?.send(TdApi.SendMessage(obj.id, 0, null, null, null, content), null)
             }
         }
     }
+}
