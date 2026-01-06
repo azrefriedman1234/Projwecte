@@ -1,4 +1,9 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="telegram_blue">#0088CC</color>
+    <color name="background_gray">#F0F2F5</color>
+    <color name="text_primary">#222222</color>
+    <color name="text_secondary">#888888</color>
+    <color name="bubble_out">#EEFFDE</color> <color name="bubble_in">#FFFFFF</color>  <color name="divider">#E0E0E0</color>
 </resources>
