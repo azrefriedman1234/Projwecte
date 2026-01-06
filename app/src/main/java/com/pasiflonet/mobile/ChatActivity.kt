@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 
 class ChatActivity : AppCompatActivity() {
     private lateinit var binding: ActivityChatBinding
-    private lateinit var adapter: ChatAdapter
+    private lateinit var chatAdapter: ChatAdapter
     private var chatId: Long = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,22 +22,23 @@ class ChatActivity : AppCompatActivity() {
         chatId = intent.getLongExtra("CHAT_ID", 0)
         val chatTitle = intent.getStringExtra("CHAT_TITLE") ?: "Chat"
         
+        // עכשיו tvChatTitle קיים ב-XML
         binding.tvChatTitle.text = chatTitle
 
-        // תיקון: הוספת הפרמטר השלישי (text) ללמבדה
-        adapter = ChatAdapter(emptyList()) { filePath, isVideo, originalText ->
+        chatAdapter = ChatAdapter(emptyList()) { filePath, isVideo, originalText ->
             val intent = Intent(this, DetailsActivity::class.java).apply {
                 putExtra("FILE_PATH", filePath)
                 putExtra("IS_VIDEO", isVideo)
-                putExtra("MESSAGE_TEXT", originalText) // העברת הטקסט למסך העריכה
+                putExtra("MESSAGE_TEXT", originalText)
             }
             startActivity(intent)
         }
 
         binding.rvMessages.layoutManager = LinearLayoutManager(this).apply {
-            stackFromEnd = true // הודעות חדשות למטה
+            stackFromEnd = true
+            reverseLayout = true // הודעות חדשות למטה (כמו בטלגרם)
         }
-        binding.rvMessages.adapter = adapter
+        binding.rvMessages.adapter = chatAdapter
 
         observeMessages()
         TdLibManager.loadChatHistory(chatId)
@@ -47,9 +48,9 @@ class ChatActivity : AppCompatActivity() {
         lifecycleScope.launch {
             TdLibManager.currentMessages.collect { messages ->
                 runOnUiThread {
-                    adapter.updateList(messages)
+                    chatAdapter.updateList(messages)
                     if (messages.isNotEmpty()) {
-                        binding.rvMessages.smoothScrollToPosition(0)
+                        binding.rvMessages.scrollToPosition(0)
                     }
                 }
             }
