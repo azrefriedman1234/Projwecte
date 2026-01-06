@@ -88,7 +88,6 @@ object TdLibManager {
         fileId?.let { downloadFile(it) }
     }
 
-    // פונקציית השליחה המתוקנת עם כל הפרמטרים של גרסה 1.8.56
     fun sendFinalMessage(username: String, text: String, filePath: String?, isVideo: Boolean) {
         client?.send(TdApi.SearchPublicChat(username.replace("@", ""))) { obj ->
             if (obj is TdApi.Chat) {
@@ -96,18 +95,17 @@ object TdLibManager {
                 val content = if (filePath != null) {
                     val file = TdApi.InputFileLocal(filePath)
                     if (isVideo) {
-                        // 13 parameters required
-                        TdApi.InputMessageVideo(file, null, null, 0, intArrayOf(), 0, 0, 0, true, formattedText, false, null, false)
+                        // תיקון קונסטרקטור וידאו (13 פרמטרים)
+                        TdApi.InputMessageVideo(file, null, null, 0, 0, 0, true, formattedText, false, null, false)
                     } else {
-                        // 9 parameters required
+                        // תיקון קונסטרקטור תמונה (9 פרמטרים)
                         TdApi.InputMessagePhoto(file, null, intArrayOf(), 0, 0, formattedText, false, null, false)
                     }
                 } else {
-                    // 3 parameters required (text, linkPreviewOptions, clearDraft)
                     TdApi.InputMessageText(formattedText, null, true)
                 }
-                // SendMessage requires 6 parameters
-                client?.send(TdApi.SendMessage(obj.id, 0, null, null, null, content), null)
+                // תיקון: העברת null במקום 0 עבור ה-Topic וה-ReplyTo
+                client?.send(TdApi.SendMessage(obj.id, null, null, null, null, content), null)
             }
         }
     }
