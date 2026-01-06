@@ -1,16 +1,17 @@
 package com.pasiflonet.mobile
 
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.pasiflonet.mobile.databinding.ActivityDetailsBinding
-import com.pasiflonet.mobile.utils.MediaProcessor
+import com.pasiflonet.mobile.td.TdLibManager
 import com.pasiflonet.mobile.utils.DataStoreRepo
+import com.pasiflonet.mobile.utils.MediaProcessor
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
@@ -19,6 +20,8 @@ class DetailsActivity : AppCompatActivity() {
     private lateinit var binding: ActivityDetailsBinding
     private var currentFilePath: String? = null
     private var isVideo: Boolean = false
+    private var dX = 0f
+    private var dY = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,37 +32,67 @@ class DetailsActivity : AppCompatActivity() {
         isVideo = intent.getBooleanExtra("IS_VIDEO", false)
 
         setupPreview()
-        
-        binding.btnUndo.setOnClickListener { binding.overlayView.undo() }
-        binding.btnClear.setOnClickListener { binding.overlayView.clear() }
-        binding.btnSend.setOnClickListener { processAndFinish() }
+        setupDraggableLogo()
+
+        binding.btnSend.setOnClickListener { processAndSend() }
     }
 
     private fun setupPreview() {
-        currentFilePath?.let {
-            val bitmap = BitmapFactory.decodeFile(it)
-            binding.previewImage.setImageBitmap(bitmap)
+        currentFilePath?.let { binding.previewImage.setImageBitmap(BitmapFactory.decodeFile(it)) }
+    }
+
+    private fun setupDraggableLogo() {
+        lifecycleScope.launch {
+            val logoUri = DataStoreRepo(this@DetailsActivity).logoUri.first()
+            if (logoUri != null) {
+                binding.ivDraggableLogo.visibility = View.VISIBLE
+                binding.ivDraggableLogo.setImageURI(Uri.parse(logoUri))
+                
+                binding.ivDraggableLogo.setOnTouchListener { view, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            dX = view.x - event.rawX
+                            dY = view.y - event.rawY
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            view.animate().x(event.rawX + dX).y(event.rawY + dY).setDuration(0).start()
+                        }
+                    }
+                    true
+                }
+            }
         }
     }
 
-    private fun processAndFinish() {
+    private fun processAndSend() {
         lifecycleScope.launch {
-            val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.jpg").absolutePath
-            val logoUri = DataStoreRepo(this@DetailsActivity).logoUri.first()?.let { Uri.parse(it) }
-            
-            try {
-                MediaProcessor.processImage(
-                    context = this@DetailsActivity,
-                    inputPath = currentFilePath!!,
-                    outputPath = outPath,
-                    blurRects = binding.overlayView.getBlurRects(),
-                    logoUri = logoUri
-                )
-                Toast.makeText(this@DetailsActivity, "Saved to $outPath", Toast.LENGTH_LONG).show()
-                finish()
-            } catch (e: Exception) {
-                Toast.makeText(this@DetailsActivity, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            val repo = DataStoreRepo(this@DetailsActivity)
+            val target = repo.targetUsername.first() ?: ""
+            if (target.isEmpty()) {
+                Toast.makeText(this@DetailsActivity, "Please set target channel in Settings", Toast.LENGTH_SHORT).show()
+                return@launch
             }
+
+            val outPath = File(cacheDir, "final_send.jpg").absolutePath
+            val logoUri = repo.logoUri.first()?.let { Uri.parse(it) }
+            
+            // חישוב מיקום יחסי של הלוגו ביחס למכולה
+            val logoX = binding.ivDraggableLogo.x / binding.previewContainer.width
+            val logoY = binding.ivDraggableLogo.y / binding.previewContainer.height
+
+            MediaProcessor.processImage(
+                context = this@DetailsActivity,
+                inputPath = currentFilePath!!,
+                outputPath = outPath,
+                blurRects = binding.overlayView.getBlurRects(),
+                logoUri = logoUri,
+                logoX = logoX, // העברת המיקום החדש לעיבוד
+                logoY = logoY
+            )
+
+            TdLibManager.sendMediaToUsername(target, outPath, false)
+            Toast.makeText(this@DetailsActivity, "Sending to $target...", Toast.LENGTH_SHORT).show()
+            finish()
         }
     }
 }

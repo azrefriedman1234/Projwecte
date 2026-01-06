@@ -108,3 +108,19 @@ object TdLibManager {
         fileId?.let { downloadFile(it) }
     }
 }
+
+    fun sendMediaToUsername(username: String, filePath: String, isVideo: Boolean) {
+        // 1. חיפוש הצ'אט לפי ה-Username
+        client?.send(TdApi.SearchPublicChat(username.replace("@", ""))) { obj ->
+            if (obj is TdApi.Chat) {
+                // 2. שליחת הקובץ
+                val file = TdApi.InputFileLocal(filePath)
+                val content = if (isVideo) {
+                    TdApi.InputMessageVideo(file, null, null, 0, 0, 0, 0, 0, null, 0)
+                } else {
+                    TdApi.InputMessagePhoto(file, null, null, 0, 0, null, 0)
+                }
+                client?.send(TdApi.SendMessage(obj.id, 0, 0, null, null, content), null)
+            }
+        }
+    }
