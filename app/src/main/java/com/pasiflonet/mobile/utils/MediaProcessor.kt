@@ -14,58 +14,55 @@ object MediaProcessor {
         inputPath: String,
         outputPath: String,
         blurRects: List<BlurRect>,
-        logoUri: Uri?
+        logoUri: Uri?,
+        logoX: Float, // המיקום האופקי (0.0-1.0) שנקבע בגרירה
+        logoY: Float  // המיקום האנכי (0.0-1.0) שנקבע בגרירה
     ) {
         val options = BitmapFactory.Options().apply { inMutable = true }
         val original = BitmapFactory.decodeFile(inputPath, options) ?: return
-        
         val canvas = Canvas(original)
-        val bitmapWidth = original.width
-        val bitmapHeight = original.height
+        val bW = original.width
+        val bH = original.height
 
-        // 1. ביצוע טשטוש (Pixelation) על האזורים שנבחרו
-        val blurPaint = Paint().apply { isAntiAlias = true }
-        
+        // 1. טשטוש אזורים נבחרים
         blurRects.forEach { relative ->
-            // המרה מקואורדינטות מסך (0.0 עד 1.0) לפיקסלים אמיתיים בביטמפ
-            val left = (relative.rect.left * bitmapWidth).toInt().coerceAtLeast(0)
-            val top = (relative.rect.top * bitmapHeight).toInt().coerceAtLeast(0)
-            val right = (relative.rect.right * bitmapWidth).toInt().coerceAtMost(bitmapWidth)
-            val bottom = (relative.rect.bottom * bitmapHeight).toInt().coerceAtMost(bitmapHeight)
-
-            val width = right - left
-            val height = bottom - top
-
-            if (width > 10 && height > 10) {
-                // גזירת החלק המיועד לטשטוש
-                val subset = Bitmap.createBitmap(original, left, top, width, height)
-                // הקטנה משמעותית והגדלה חזרה יוצרת אפקט פיקסליזציה (טשטוש)
-                val pixelated = Bitmap.createScaledBitmap(subset, width / 20 + 1, height / 20 + 1, false)
-                val finalBlur = Bitmap.createScaledBitmap(pixelated, width, height, true)
-                
-                canvas.drawBitmap(finalBlur, left.toFloat(), top.toFloat(), blurPaint)
+            val left = (relative.rect.left * bW).toInt().coerceAtLeast(0)
+            val top = (relative.rect.top * bH).toInt().coerceAtLeast(0)
+            val right = (relative.rect.right * bW).toInt().coerceAtMost(bW)
+            val bottom = (relative.rect.bottom * bH).toInt().coerceAtMost(bH)
+            
+            val w = right - left
+            val h = bottom - top
+            if (w > 5 && h > 5) {
+                val subset = Bitmap.createBitmap(original, left, top, w, h)
+                val pixelated = Bitmap.createScaledBitmap(subset, w/20 + 1, h/20 + 1, false)
+                val finalBlur = Bitmap.createScaledBitmap(pixelated, w, h, true)
+                canvas.drawBitmap(finalBlur, left.toFloat(), top.toFloat(), null)
             }
         }
 
-        // 2. הוספת סימן מים (Watermark)
+        // 2. הטבעת הלוגו מההגדרות במיקום שנגרר
         logoUri?.let { uri ->
             try {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
                     val logo = BitmapFactory.decodeStream(stream)
                     if (logo != null) {
-                        // חישוב גודל לוגו (נניח 15% מרוחב התמונה)
-                        val logoW = (bitmapWidth * 0.15).toInt()
-                        val logoH = (logo.height * logoW) / logo.width
-                        val scaledLogo = Bitmap.createScaledBitmap(logo, logoW, logoH, true)
+                        // שמירה על יחס גובה-רוחב של הלוגו (רוחב 15% מהתמונה)
+                        val targetLogoW = (bW * 0.15).toInt()
+                        val targetLogoH = (logo.height * targetLogoW) / logo.width
+                        val scaledLogo = Bitmap.createScaledBitmap(logo, targetLogoW, targetLogoH, true)
                         
-                        // ציור הלוגו בפינה הימנית העליונה (עם מרווח של 20 פיקסלים)
-                        canvas.drawBitmap(scaledLogo, (bitmapWidth - logoW - 20).toFloat(), 20f, null)
+                        // המרת המיקום היחסי מהמסך לפיקסלים בביטמפ המקורי
+                        val finalX = logoX * bW
+                        val finalY = logoY * bH
+                        
+                        canvas.drawBitmap(scaledLogo, finalX, finalY, null)
                     }
                 }
             } catch (e: Exception) { e.printStackTrace() }
         }
 
-        // 3. שמירת התוצאה
+        // 3. שמירה סופית
         FileOutputStream(File(outputPath)).use { out ->
             original.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }
