@@ -81,7 +81,7 @@ object TdLibManager {
 
     private fun downloadMediaIfNeeded(msg: TdApi.Message) {
         val fileId = when (val c = msg.content) {
-            is TdApi.MessagePhoto -> c.photo.sizes.last().photo.id
+            is TdApi.MessagePhoto -> c.photo.sizes.lastOrNull()?.photo?.id
             is TdApi.MessageVideo -> c.video.video.id
             else -> null
         }
@@ -95,16 +95,17 @@ object TdLibManager {
                 val content = if (filePath != null) {
                     val file = TdApi.InputFileLocal(filePath)
                     if (isVideo) {
-                        // תיקון קונסטרקטור וידאו (13 פרמטרים)
-                        TdApi.InputMessageVideo(file, null, null, 0, 0, 0, true, formattedText, false, null, false)
+                        // חובה בדיוק 13 פרמטרים לפי השגיאה:
+                        // file, thumbnail, addedStickerFile, duration, streamingDurations, width, height, orientation, supportsStreaming, caption, clearDraft, selfDestructType, hasSpoiler
+                        TdApi.InputMessageVideo(file, null, null, 0, intArrayOf(), 0, 0, 0, true, formattedText, false, null, false)
                     } else {
-                        // תיקון קונסטרקטור תמונה (9 פרמטרים)
+                        // חובה בדיוק 9 פרמטרים לפי השגיאה:
+                        // file, thumbnail, addedStickerFileIds, width, height, caption, showCaptionAboveMedia, selfDestructType, hasSpoiler
                         TdApi.InputMessagePhoto(file, null, intArrayOf(), 0, 0, formattedText, false, null, false)
                     }
                 } else {
                     TdApi.InputMessageText(formattedText, null, true)
                 }
-                // תיקון: העברת null במקום 0 עבור ה-Topic וה-ReplyTo
                 client?.send(TdApi.SendMessage(obj.id, null, null, null, null, content), null)
             }
         }
