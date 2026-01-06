@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.pasiflonet.mobile"
-    compileSdk = 34 
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.pasiflonet.mobile"
@@ -34,13 +34,6 @@ android {
     }
 }
 
-// הגדרת תיקיית libs מקומית ל-TDLib
-repositories {
-    flatDir {
-        dirs("libs")
-    }
-}
-
 dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
@@ -59,7 +52,7 @@ dependencies {
     // Coil
     implementation("io.coil-kt:coil:2.5.0")
 
-    // Media3 (Transformer & Common)
+    // Media3
     implementation("androidx.media3:media3-transformer:1.2.1")
     implementation("androidx.media3:media3-common:1.2.1")
     implementation("androidx.media3:media3-effect:1.2.1")
@@ -67,6 +60,6 @@ dependencies {
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 
-    // TDLib Local AAR
+    // TDLib Local AAR (Direct File Reference)
     implementation(files("libs/td-1.8.56.aar"))
 }
