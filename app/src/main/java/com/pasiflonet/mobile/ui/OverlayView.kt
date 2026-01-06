@@ -1,37 +1,87 @@
 package com.pasiflonet.mobile.ui
 
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
+import android.graphics.*
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 
-class OverlayView(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
-    private val rects = mutableListOf<RectF>()
+data class BlurRect(val rect: RectF)
+
+class OverlayView @JvmOverloads constructor(
+    context: Context, attrs: AttributeSet? = null
+) : View(context, attrs) {
+
+    private val paint = Paint().apply {
+        color = Color.RED
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+    }
+    
+    private val fillPaint = Paint().apply {
+        color = Color.parseColor("#44FF0000") 
+        style = Paint.Style.FILL
+    }
+
+    private val rects = mutableListOf<BlurRect>()
     private var currentRect: RectF? = null
-    private var mode = Mode.ADD // ADD / REMOVE
+    private var startX = 0f
+    private var startY = 0f
 
-    enum class Mode { ADD, REMOVE }
-
-    fun getNormalizedRects(width: Int, height: Int): List<FloatArray> {
-        return rects.map { floatArrayOf(it.left / width, it.top / height, it.width() / width, it.height() / height) }
+    fun getRectsRelative(): List<BlurRect> {
+        return rects.map { 
+            BlurRect(RectF(it.rect.left / width, it.rect.top / height, it.rect.right / width, it.rect.bottom / height))
+        }
     }
 
-    fun undo() {
-        if (rects.isNotEmpty()) rects.removeLast()
-        invalidate()
-    }
-
-    fun clearAll() {
+    fun clear() {
         rects.clear()
         invalidate()
     }
+    
+    fun undo() {
+        if (rects.isNotEmpty()) {
+            rects.removeAt(rects.lastIndex)
+            invalidate()
+        }
+    }
 
-    // Stub for touch: add real onTouchEvent for drag/resize
     override fun onDraw(canvas: Canvas) {
-        val paint = Paint().apply { color = Color.argb(100, 0, 0, 255); style = Paint.Style.FILL }
-        rects.forEach { canvas.drawRect(it, paint) }
+        super.onDraw(canvas)
+        for (r in rects) {
+            canvas.drawRect(r.rect, fillPaint)
+            canvas.drawRect(r.rect, paint)
+        }
+        currentRect?.let {
+            canvas.drawRect(it, fillPaint)
+            canvas.drawRect(it, paint)
+        }
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                startX = event.x
+                startY = event.y
+                currentRect = RectF(startX, startY, startX, startY)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                currentRect?.let {
+                    it.right = event.x
+                    it.bottom = event.y
+                    it.sort()
+                    invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                currentRect?.let {
+                    rects.add(BlurRect(it))
+                    currentRect = null
+                    invalidate()
+                }
+            }
+        }
+        return super.onTouchEvent(event)
     }
 }

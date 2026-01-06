@@ -1,0 +1,39 @@
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/previewImage"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="fitCenter"
+        app:layout_constraintBottom_toTopOf="@id/controlsPanel"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.pasiflonet.mobile.ui.OverlayView
+        android:id="@+id/overlayView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="@id/previewImage"
+        app:layout_constraintEnd_toEndOf="@id/previewImage"
+        app:layout_constraintStart_toStartOf="@id/previewImage"
+        app:layout_constraintTop_toTopOf="@id/previewImage" />
+
+    <LinearLayout
+        android:id="@+id/controlsPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <Button android:id="@+id/btnUndo" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Undo" />
+        <Button android:id="@+id/btnClear" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Clear" />
+        <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
+        <Button android:id="@+id/btnSend" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Send" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

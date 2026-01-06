@@ -1,14 +1,5 @@
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath("com.android.tools.build:gradle:9.0.0")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.0")
-    }
-}
-
-tasks.register("clean", Delete::class) {
-    delete(rootProject.buildDir)
+// Root build.gradle
+plugins {
+    id("com.android.application") version "8.2.0" apply false
+    id("org.jetbrains.kotlin.android") version "1.9.20" apply false
 }
