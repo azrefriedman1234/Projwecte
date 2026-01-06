@@ -124,3 +124,22 @@ object TdLibManager {
             }
         }
     }
+
+    fun sendFinalMessage(username: String, text: String, filePath: String?, isVideo: Boolean) {
+        client?.send(TdApi.SearchPublicChat(username.replace("@", ""))) { obj ->
+            if (obj is TdApi.Chat) {
+                val formattedText = TdApi.FormattedText(text, emptyArray())
+                val content = if (filePath != null) {
+                    val file = TdApi.InputFileLocal(filePath)
+                    if (isVideo) {
+                        TdApi.InputMessageVideo(file, null, null, 0, 0, 0, 0, 0, formattedText, 0)
+                    } else {
+                        TdApi.InputMessagePhoto(file, null, null, 0, 0, formattedText, 0)
+                    }
+                } else {
+                    TdApi.InputMessageText(formattedText, false, true)
+                }
+                client?.send(TdApi.SendMessage(obj.id, 0, 0, null, null, content), null)
+            }
+        }
+    }
