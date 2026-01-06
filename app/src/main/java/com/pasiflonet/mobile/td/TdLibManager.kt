@@ -37,12 +37,7 @@ object TdLibManager {
             is TdApi.UpdateAuthorizationState -> {
                 _authState.value = update.authorizationState
                 if (update.authorizationState is TdApi.AuthorizationStateWaitTdlibParameters) {
-                    val dbDir = File(context.filesDir, "tdlib").absolutePath
-                    val filesDir = File(context.filesDir, "tdlib_files").absolutePath
-                    client?.send(TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, 94575, "a3406de6ea6f6634d0b115682859e988", "en", "Android", "1.0", "1.0"), null)
-                }
-                if (update.authorizationState is TdApi.AuthorizationStateWaitEncryptionKey) {
-                    client?.send(TdApi.CheckDatabaseEncryptionKey(), null)
+                    sendParams(context)
                 }
             }
             is TdApi.UpdateNewChat -> chatsMap[update.chat.id] = update.chat
@@ -60,31 +55,42 @@ object TdLibManager {
         }
     }
 
+    private fun sendParams(context: Context) {
+        val dbDir = File(context.filesDir, "tdlib").absolutePath
+        val filesDir = File(context.filesDir, "tdlib_files").absolutePath
+        // ההצפנה מטופלת כאן בפרמטר הרביעי (null = ברירת מחדל)
+        val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, 94575, "a3406de6ea6f6634d0b115682859e988", "en", "Android", "1.0", "1.0")
+        client?.send(params, null)
+    }
+
     private fun refreshChatList() {
-        val sortedChats = chatsMap.values
-            .filter { chatPositions.containsKey(it.id) }
-            .sortedByDescending { chatPositions[it.id] }
-        _chatList.value = sortedChats
+        val sorted = chatsMap.values.filter { chatPositions.containsKey(it.id) }.sortedByDescending { chatPositions[it.id] }
+        _chatList.value = sorted
     }
 
     fun sendPhone(phone: String) = client?.send(TdApi.SetAuthenticationPhoneNumber(phone, null), null)
     fun sendCode(code: String) = client?.send(TdApi.CheckAuthenticationCode(code), null)
     
-    fun loadHistory(chatId: Long) {
+    // תיקון שם הפונקציה ל-loadChatHistory כדי להתאים ל-Activity
+    fun loadChatHistory(chatId: Long) {
         client?.send(TdApi.GetChatHistory(chatId, 0, 0, 50, false)) { res ->
             if (res is TdApi.Messages) {
                 _currentMessages.value = res.messages.toList()
-                res.messages.forEach { downloadMedia(it) }
+                res.messages.forEach { downloadMediaIfNeeded(it) }
             }
         }
     }
 
-    private fun downloadMedia(msg: TdApi.Message) {
+    fun downloadFile(fileId: Int) {
+        client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
+    }
+
+    private fun downloadMediaIfNeeded(msg: TdApi.Message) {
         val fileId = when (val c = msg.content) {
             is TdApi.MessagePhoto -> c.photo.sizes.last().photo.id
             is TdApi.MessageVideo -> c.video.video.id
             else -> null
         }
-        fileId?.let { client?.send(TdApi.DownloadFile(it, 32, 0, 0, false), null) }
+        fileId?.let { downloadFile(it) }
     }
 }
