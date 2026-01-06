@@ -13,6 +13,9 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+        
+        // חשוב ל-TDLib ולספריות גדולות
+        multiDexEnabled = true
     }
 
     buildTypes {
@@ -21,6 +24,17 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+    
+    // תיקון קריטי: מונע התנגשויות בקבצי C++ של TDLib
+    packaging {
+        jniLibs {
+            pickFirst("lib/**/*.so")
+        }
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -49,16 +63,18 @@ dependencies {
     // Lifecycle
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     
-    // Coil (Image Loading)
+    // Coil
     implementation("io.coil-kt:coil:2.5.0")
     
     // WorkManager
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     
-    // Guava (נדרש לפעמים על ידי Media3, משאירים אותו אונליין כי הוא קטן ויציב)
+    // Guava
     implementation("com.google.guava:guava:31.1-android")
 
-    // --- LOCAL LIBRARIES (Offline) ---
-    // טוען את כל קבצי ה-AAR מתיקיית libs באופן אוטומטי
+    // MultiDex (נדרש בגלל הגודל של TDLib)
+    implementation("androidx.multidex:multidex:2.0.1")
+
+    // טעינת ספריות מקומיות
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
 }

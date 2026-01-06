@@ -18,16 +18,19 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # הדפסת רשימת הקבצים כדי לוודא שה-AARים עלו
-    - name: Verify Local Libs
+    # תיקון הרשאות לקובץ ה-gradlew (אם קיים, אם לא נשתמש ב-gradle מערכת)
+    - name: Setup Gradle
+      uses: gradle/gradle-build-action@v2
+      with:
+        gradle-version: '8.2'
+    
+    # בדיקת תקינות קבצים (לוודא שלא ירד HTML בטעות)
+    - name: Check Libs Size
       run: ls -lh app/libs/
 
     - name: Build with Gradle
-      uses: gradle/gradle-build-action@v2
-      with:
-        # התיקון: גרסה 8.2 בתוך גרשיים כדי למנוע המרה למספר
-        gradle-version: '8.2'
-        arguments: assembleDebug --stacktrace --no-daemon
+      # שימוש במערכת של Gradle Action אבל עם הפקודות הנכונות
+      run: gradle assembleDebug --stacktrace --no-daemon --refresh-dependencies
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
