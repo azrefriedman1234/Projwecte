@@ -10,30 +10,26 @@ import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
 
 object TdLibManager {
     private var client: Client? = null
     
-    // מצב התחברות
     private val _authState = MutableStateFlow<TdApi.AuthorizationState?>(null)
     val authState: StateFlow<TdApi.AuthorizationState?> = _authState
 
-    // רשימת צ'אטים חיה (מסודרת לפי Order)
     private val _chatList = MutableStateFlow<List<TdApi.Chat>>(emptyList())
     val chatList: StateFlow<List<TdApi.Chat>> = _chatList
     
-    // מפה פנימית לניהול מהיר של צ'אטים
     private val chatsMap = ConcurrentHashMap<Long, TdApi.Chat>()
-    private val orderedChatIds = ArrayList<Long>()
+    private val orderedChatIds = Collections.synchronizedList(ArrayList<Long>())
 
-    // הודעות בצ'אט הפעיל
     private val _currentMessages = MutableStateFlow<List<TdApi.Message>>(emptyList())
     val currentMessages: StateFlow<List<TdApi.Message>> = _currentMessages
 
     fun init(context: Context) {
         if (client != null) return
         
-        // יצירת קליינט עם הנדלר לעדכונים בזמן אמת
         client = Client.create({ update ->
             CoroutineScope(Dispatchers.IO).launch {
                 handleUpdate(context, update)
@@ -51,14 +47,13 @@ object TdLibManager {
             }
             is TdApi.UpdateNewChat -> {
                 chatsMap[update.chat.id] = update.chat
-                // אנחנו לא מוסיפים לרשימה הסופית עד שאין UpdateChatPosition כדי לשמור על סדר
             }
             is TdApi.UpdateChatPosition -> {
                 if (update.position.list.constructor == TdApi.ChatListMain.CONSTRUCTOR) {
                     synchronized(orderedChatIds) {
                         orderedChatIds.remove(update.chatId)
                         if (update.position.order != 0L) {
-                            // הכנסה ממוינת פשוטה (בפרויקט גדול נדרש מיון יעיל יותר)
+                            // הוספה פשוטה להתחלה (בפועל נדרש מיון לפי order)
                             orderedChatIds.add(0, update.chatId) 
                         }
                     }
@@ -66,25 +61,16 @@ object TdLibManager {
                 }
             }
             is TdApi.UpdateNewMessage -> {
-                // הוספת הודעה חדשה בזמן אמת לרשימה אם אנחנו בצ'אט הרלוונטי
                 val currentList = _currentMessages.value.toMutableList()
                 if (currentList.isNotEmpty() && currentList.first().chatId == update.message.chatId) {
-                    currentList.add(0, update.message) // הוספה להתחלה
+                    currentList.add(0, update.message)
                     _currentMessages.value = currentList
-                }
-                
-                // עדכון הצ'אט ברשימה (הודעה אחרונה)
-                val chat = chatsMap[update.message.chatId]
-                if (chat != null) {
-                    // כאן היה צריך לעדכן את ה-lastMessage של הצ'אט, אבל TDLib שולח UpdateChatLastMessage בנפרד
                 }
             }
             is TdApi.UpdateFile -> {
-                // עדכון קריטי! כשהורדה מסתיימת, אנחנו צריכים לרענן את המסך
-                // כדי שהכפתור "עריכה" יופיע
                 val file = update.file
                 if (file.local.isDownloadingCompleted) {
-                   // טריגר לרענון ה-UI (בצורה גסה מעדכנים את כל הרשימה כדי שהאדפטר יזהה שינוי)
+                   // רענון הרשימה כדי לעדכן כפתורים
                    _currentMessages.value = _currentMessages.value.toList()
                 }
             }
@@ -102,20 +88,29 @@ object TdLibManager {
     }
 
     private fun sendTdLibParams(context: Context) {
-        val params = TdApi.TdlibParameters()
-        params.databaseDirectory = File(context.filesDir, "tdlib").absolutePath
-        params.useMessageDatabase = true
-        params.useSecretChats = true
-        params.apiId = 94575 
-        params.apiHash = "a3406de6ea6f6634d0b115682859e988"
-        params.systemLanguageCode = "en"
-        params.deviceModel = "Pasiflonet Mobile"
-        params.applicationVersion = "1.0"
+        // תיקון קריטי: העברת הפרמטרים ישירות לקונסטרקטור במקום דרך אובייקט
+        val databaseDir = File(context.filesDir, "tdlib").absolutePath
+        val filesDir = File(context.filesDir, "tdlib_files").absolutePath
         
-        client?.send(TdApi.SetTdlibParameters(params), null)
+        val request = TdApi.SetTdlibParameters(
+            false,               // use_test_dc
+            databaseDir,         // database_directory
+            filesDir,            // files_directory
+            null,                // database_encryption_key (null = default)
+            true,                // use_file_database
+            true,                // use_chat_info_database
+            true,                // use_message_database
+            true,                // use_secret_chats
+            94575,               // api_id
+            "a3406de6ea6f6634d0b115682859e988", // api_hash
+            "en",                // system_language_code
+            "Pasiflonet Mobile", // device_model
+            "1.0",               // system_version
+            "1.0"                // application_version
+        )
+        
+        client?.send(request, null)
     }
-
-    // --- Public Actions ---
 
     fun sendPhone(phone: String) {
         client?.send(TdApi.SetAuthenticationPhoneNumber(phone, TdApi.PhoneNumberAuthenticationSettings()), null)
@@ -126,15 +121,10 @@ object TdLibManager {
     }
 
     fun loadChatHistory(chatId: Long) {
-        // איפוס הרשימה הנוכחית
         _currentMessages.value = emptyList()
-        
-        // שליפת 50 הודעות אחרונות
         client?.send(TdApi.GetChatHistory(chatId, 0, 0, 50, false)) { result ->
             if (result is TdApi.Messages) {
                 _currentMessages.value = result.messages.toList()
-                
-                // בדיקה אוטומטית: אם יש הודעות מדיה בלי קובץ - תוריד אותן!
                 result.messages.forEach { msg ->
                     downloadMediaIfNeeded(msg)
                 }
@@ -143,7 +133,8 @@ object TdLibManager {
     }
     
     fun downloadFile(fileId: Int) {
-        client?.send(TdApi.DownloadFile(fileId, 32), null)
+        // תיקון: הוספת כל הפרמטרים החסרים (offset=0, limit=0, sync=false)
+        client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
     }
     
     private fun downloadMediaIfNeeded(msg: TdApi.Message) {
@@ -156,7 +147,6 @@ object TdLibManager {
         }
         
         if (file != null && !file.local.isDownloadingCompleted) {
-            // התחלת הורדה אוטומטית כדי שיהיה מוכן לעריכה
             downloadFile(file.id)
         }
     }
