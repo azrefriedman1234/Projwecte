@@ -47,7 +47,6 @@ object MediaProcessor {
             val bottom = (relative.rect.bottom * h).toInt().coerceAtMost(h)
             
             if (right > left && bottom > top) {
-                // Simple pixelation blur logic
                 val subset = Bitmap.createBitmap(original, left, top, right - left, bottom - top)
                 val small = Bitmap.createScaledBitmap(subset, subset.width / 10 + 1, subset.height / 10 + 1, true)
                 val blurred = Bitmap.createScaledBitmap(small, subset.width, subset.height, false)
@@ -82,12 +81,21 @@ object MediaProcessor {
     ): File = suspendCoroutine { continuation ->
         
         val effects = mutableListOf<Effect>()
+        
         if (logoUri != null) {
              try {
-                // Fixed: Explicit type usage for Media3 Overlay
-                val overlay = BitmapOverlay.createFromUri(context, logoUri)
-                val overlayEffect = OverlayEffect(ImmutableList.of(overlay as TextureOverlay))
-                effects.add(overlayEffect)
+                // תיקון: טעינה ידנית של הביטמפ במקום להשתמש ב-createFromUri
+                val inputStream = context.contentResolver.openInputStream(logoUri)
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                inputStream?.close()
+                
+                if (bitmap != null) {
+                    // יצירת ה-Overlay מהביטמפ שטענו
+                    val overlay = BitmapOverlay.createStaticBitmapOverlay(bitmap)
+                    // שימוש ב-ImmutableList כפי שהספרייה דורשת
+                    val overlayEffect = OverlayEffect(ImmutableList.of(overlay as TextureOverlay))
+                    effects.add(overlayEffect)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
