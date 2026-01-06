@@ -12,6 +12,8 @@ import java.util.concurrent.ConcurrentHashMap
 object TdLibManager {
     private var client: Client? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var currentApiId: Int = 0
+    private var currentApiHash: String = ""
 
     private val _authState = MutableStateFlow<TdApi.AuthorizationState?>(null)
     val authState: StateFlow<TdApi.AuthorizationState?> = _authState
@@ -25,8 +27,11 @@ object TdLibManager {
     private val chatsMap = ConcurrentHashMap<Long, TdApi.Chat>()
     private val chatPositions = ConcurrentHashMap<Long, Long>()
 
-    fun init(context: Context) {
+    fun init(context: Context, apiId: Int, apiHash: String) {
         if (client != null) return
+        currentApiId = apiId
+        currentApiHash = apiHash
+        
         client = Client.create({ update ->
             scope.launch { handleUpdate(context, update) }
         }, null, null)
@@ -58,8 +63,7 @@ object TdLibManager {
     private fun sendParams(context: Context) {
         val dbDir = File(context.filesDir, "tdlib").absolutePath
         val filesDir = File(context.filesDir, "tdlib_files").absolutePath
-        // ההצפנה מטופלת כאן בפרמטר הרביעי (null = ברירת מחדל)
-        val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, 94575, "a3406de6ea6f6634d0b115682859e988", "en", "Android", "1.0", "1.0")
+        val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, currentApiId, currentApiHash, "en", "Android", "1.0", "1.0")
         client?.send(params, null)
     }
 
@@ -70,8 +74,6 @@ object TdLibManager {
 
     fun sendPhone(phone: String) = client?.send(TdApi.SetAuthenticationPhoneNumber(phone, null), null)
     fun sendCode(code: String) = client?.send(TdApi.CheckAuthenticationCode(code), null)
-    
-    // תיקון שם הפונקציה ל-loadChatHistory כדי להתאים ל-Activity
     fun loadChatHistory(chatId: Long) {
         client?.send(TdApi.GetChatHistory(chatId, 0, 0, 50, false)) { res ->
             if (res is TdApi.Messages) {
@@ -80,11 +82,9 @@ object TdLibManager {
             }
         }
     }
-
     fun downloadFile(fileId: Int) {
         client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
     }
-
     private fun downloadMediaIfNeeded(msg: TdApi.Message) {
         val fileId = when (val c = msg.content) {
             is TdApi.MessagePhoto -> c.photo.sizes.last().photo.id

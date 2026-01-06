@@ -6,6 +6,43 @@
     android:padding="16dp">
 
     <LinearLayout
+        android:id="@+id/apiContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="visible"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Telegram API Setup"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="16dp"/>
+
+        <EditText
+            android:id="@+id/etApiId"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="API ID (e.g. 1234567)"
+            android:inputType="number" />
+
+        <EditText
+            android:id="@+id/etApiHash"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="API Hash (e.g. abc123def...)" />
+
+        <Button
+            android:id="@+id/btnSaveApi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Save &amp; Continue" />
+    </LinearLayout>
+
+    <LinearLayout
         android:id="@+id/loginContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
