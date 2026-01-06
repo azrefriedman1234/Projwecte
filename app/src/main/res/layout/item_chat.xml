@@ -56,7 +56,7 @@
         android:id="@+id/tvLastMessage"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="This is the last message preview..."
+        android:text="..."
         android:textColor="@color/text_secondary"
         android:textSize="14sp"
         android:maxLines="1"
