@@ -1,8 +1,9 @@
 // Top-level build file
 buildscript {
     repositories {
-        google()
-        mavenCentral()
+        // מירור מהיר של עליבאבא (Aliyun) לגוגל ו-Public
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
         gradlePluginPortal()
     }
     dependencies {
@@ -13,10 +14,13 @@ buildscript {
 
 allprojects {
     repositories {
+        // סדר חשיבות: קודם כל Aliyun (לא נחסם), אחר כך JitPack, ובסוף המקוריים לגיבוי
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://jitpack.io") }
+        
+        // גיבוי למקרה שמשהו חסר במירור
         google()
         mavenCentral()
-        // שרת גיבוי למקרה ש-Maven Central קורס או חוסם (פותר שגיאות 403)
-        maven { url = uri("https://jcenter.bintray.com/") }
-        maven { url = uri("https://jitpack.io") }
     }
 }
