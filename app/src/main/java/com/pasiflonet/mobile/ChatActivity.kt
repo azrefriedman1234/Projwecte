@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 
 class ChatActivity : AppCompatActivity() {
     private lateinit var binding: ActivityChatBinding
+    private lateinit var adapter: ChatAdapter
     private var chatId: Long = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -19,31 +20,37 @@ class ChatActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         chatId = intent.getLongExtra("CHAT_ID", 0)
-        binding.tvHeaderTitle.text = intent.getStringExtra("CHAT_TITLE") ?: "Chat"
+        val chatTitle = intent.getStringExtra("CHAT_TITLE") ?: "Chat"
+        
+        binding.tvChatTitle.text = chatTitle
 
-        val adapter = ChatAdapter(emptyList()) { filePath, isVideo ->
-            val intent = Intent(this, DetailsActivity::class.java)
-            intent.putExtra("FILE_PATH", filePath)
-            intent.putExtra("IS_VIDEO", isVideo)
+        // תיקון: הוספת הפרמטר השלישי (text) ללמבדה
+        adapter = ChatAdapter(emptyList()) { filePath, isVideo, originalText ->
+            val intent = Intent(this, DetailsActivity::class.java).apply {
+                putExtra("FILE_PATH", filePath)
+                putExtra("IS_VIDEO", isVideo)
+                putExtra("MESSAGE_TEXT", originalText) // העברת הטקסט למסך העריכה
+            }
             startActivity(intent)
         }
 
-        binding.rvMessages.layoutManager = LinearLayoutManager(this).apply { 
-            stackFromEnd = true 
-            reverseLayout = true // TDLib נותן הודעות מהחדש לישן
+        binding.rvMessages.layoutManager = LinearLayoutManager(this).apply {
+            stackFromEnd = true // הודעות חדשות למטה
         }
         binding.rvMessages.adapter = adapter
 
-        // טעינת היסטוריה אמיתית
-        if (chatId != 0L) {
-            TdLibManager.loadChatHistory(chatId)
-        }
+        observeMessages()
+        TdLibManager.loadChatHistory(chatId)
+    }
 
-        // האזנה להודעות חדשות או עדכוני קבצים
+    private fun observeMessages() {
         lifecycleScope.launch {
             TdLibManager.currentMessages.collect { messages ->
                 runOnUiThread {
                     adapter.updateList(messages)
+                    if (messages.isNotEmpty()) {
+                        binding.rvMessages.smoothScrollToPosition(0)
+                    }
                 }
             }
         }
