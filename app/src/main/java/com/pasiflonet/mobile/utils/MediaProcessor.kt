@@ -31,18 +31,20 @@ object MediaProcessor {
     ) {
         val safeInput = File(context.cacheDir, "temp_in_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
         
-        // 1. הכנת קובץ עבודה בטוח
         try {
             File(inputPath).copyTo(safeInput, overwrite = true)
         } catch (e: Exception) {
-            showToast(context, "❌ Copy Error: ${e.message}")
+            showToast(context, "❌ File Error: ${e.message}")
             onComplete(false)
             return
         }
 
-        // אם אין עריכות - מעתיקים למטרת היעד ויוצאים
+        // אם אין שום עריכה (רק טקסט או תמונה נקייה) - מעבירים הלאה
         if (rects.isEmpty() && logoUri == null) {
-            fallbackToOriginal(safeInput, outputPath, onComplete)
+            try {
+                safeInput.copyTo(File(outputPath), overwrite = true)
+                onComplete(true)
+            } catch (e: Exception) { onComplete(false) }
             return
         }
 
@@ -59,7 +61,6 @@ object MediaProcessor {
             } catch (e: Exception) { e.printStackTrace() }
         }
 
-        // בניית פקודת FFmpeg
         val cmd = StringBuilder()
         cmd.append("-y -i \"${safeInput.absolutePath}\" ")
         if (logoPath != null) cmd.append("-i \"$logoPath\" ")
@@ -68,7 +69,7 @@ object MediaProcessor {
         
         var currentStream = "[0:v]"
         
-        // שימוש בפילטר 'boxblur' שהוא הכי יציב ונתמך בכל הגרסאות
+        // שימוש בפילטרים
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             val w = "iw*${r.right-r.left}"
@@ -76,7 +77,6 @@ object MediaProcessor {
             val x = "iw*${r.left}"
             val y = "ih*${r.top}"
             
-            // הפקודה הפשוטה ביותר לטשטוש אזורי
             cmd.append("$currentStream split=2[main][tocrop];[tocrop]crop=$w:$h:$x:$y,boxblur=10:1[blurred];[main][blurred]overlay=$x:$y $nextStream;")
             currentStream = nextStream
         }
@@ -90,43 +90,31 @@ object MediaProcessor {
 
         cmd.append("\" -map \"[out]\" ")
         
-        // הגדרות קידוד "סלחניות" למקסימום תאימות
         if (isVideo) {
             cmd.append("-c:v libx264 -preset ultrafast -crf 28 -c:a copy ")
         } else {
-            cmd.append("-q:v 5 ") // איכות JPEG בינונית-גבוהה
+            cmd.append("-q:v 5 ")
         }
 
         cmd.append("\"$outputPath\"")
-
-        Log.d("FFMPEG_CMD", cmd.toString())
 
         FFmpegKit.executeAsync(cmd.toString()) { session ->
             safeInput.delete()
             
             if (ReturnCode.isSuccess(session.returnCode)) {
+                // הצלחה! הקובץ הערוך מוכן
                 onComplete(true)
             } else {
-                // במקרה של כישלון - לא עוצרים! שולחים את המקור.
+                // כישלון! עוצרים הכל ומדווחים
                 val logs = session.allLogsAsString
+                val errorMsg = if (logs.length > 100) logs.takeLast(100) else logs
+                
+                showToast(context, "❌ Edit Failed! Nothing sent.\nError: $errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
                 
-                // מציגים את השגיאה למשתמש כדי שנדע מה לתקן
-                val errorMsg = if (logs.length > 100) logs.takeLast(100) else logs
-                showToast(context, "⚠️ Edit Failed: $errorMsg. Sending Original...")
-                
-                // Fallback: שליחת המקור
-                fallbackToOriginal(File(inputPath), outputPath, onComplete)
+                // החזרת false תגרום ל-TdLibManager לא לשלוח כלום
+                onComplete(false) 
             }
-        }
-    }
-
-    private fun fallbackToOriginal(input: File, outputPath: String, onComplete: (Boolean) -> Unit) {
-        try {
-            input.copyTo(File(outputPath), overwrite = true)
-            onComplete(true) // מדווחים שהכל "בסדר" כדי שהשליחה תתבצע
-        } catch (e: Exception) {
-            onComplete(false)
         }
     }
 }
