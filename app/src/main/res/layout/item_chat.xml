@@ -1,88 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="?android:attr/selectableItemBackground"
-    android:paddingStart="16dp"
-    android:paddingTop="10dp"
-    android:paddingEnd="16dp"
-    android:paddingBottom="10dp">
-
-    <androidx.cardview.widget.CardView
-        android:id="@+id/cardAvatar"
-        android:layout_width="50dp"
-        android:layout_height="50dp"
-        app:cardCornerRadius="25dp"
-        app:cardElevation="0dp"
-        app:cardBackgroundColor="#CCCCCC"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent">
-
-        <TextView
-            android:id="@+id/tvInitials"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:text="P"
-            android:textColor="@color/white"
-            android:textStyle="bold"
-            android:textSize="20sp"/>
-            
-        <ImageView
-            android:id="@+id/ivAvatar"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="centerCrop"/>
-    </androidx.cardview.widget.CardView>
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:background="?android:attr/selectableItemBackground">
 
     <TextView
-        android:id="@+id/tvChatTitle"
-        android:layout_width="0dp"
+        android:id="@+id/tvChatName"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="8dp"
         android:text="Chat Name"
-        android:textColor="@color/text_primary"
-        android:textSize="16sp"
+        android:textSize="18sp"
         android:textStyle="bold"
-        android:singleLine="true"
-        app:layout_constraintStart_toEndOf="@id/cardAvatar"
-        app:layout_constraintTop_toTopOf="@id/cardAvatar"
-        app:layout_constraintEnd_toStartOf="@id/tvTime"/>
+        android:textColor="#000000" />
 
     <TextView
         android:id="@+id/tvLastMessage"
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="..."
-        android:textColor="@color/text_secondary"
+        android:text="Last message preview..."
         android:textSize="14sp"
+        android:textColor="#666666"
         android:maxLines="1"
         android:ellipsize="end"
-        app:layout_constraintStart_toStartOf="@id/tvChatTitle"
-        app:layout_constraintTop_toBottomOf="@id/tvChatTitle"
-        app:layout_constraintEnd_toEndOf="parent"/>
-
-    <TextView
-        android:id="@+id/tvTime"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="12:00"
-        android:textColor="@color/text_secondary"
-        android:textSize="12sp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@id/tvChatTitle"
-        app:layout_constraintBottom_toBottomOf="@id/tvChatTitle"/>
+        android:layout_marginTop="4dp" />
 
     <View
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:background="@color/divider"
-        android:layout_marginTop="10dp"
-        app:layout_constraintStart_toStartOf="@id/tvChatTitle"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/cardAvatar"/>
+        android:background="#E0E0E0"
+        android:layout_marginTop="12dp" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+</LinearLayout>
