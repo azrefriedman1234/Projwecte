@@ -1,0 +1,12 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/loginContainer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:visibility="gone">
+    <TextView android:id="@+id/tvStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:textColor="@color/telegram_blue" />
+    <EditText android:id="@+id/etPhone" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Phone" android:inputType="phone" />
+    <Button android:id="@+id/btnSendCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Send Code" />
+    <EditText android:id="@+id/etCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Code" android:inputType="number" android:visibility="gone" />
+    <Button android:id="@+id/btnVerify" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Verify" android:visibility="gone" />
+</LinearLayout>

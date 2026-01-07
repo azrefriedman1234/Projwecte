@@ -1,74 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#FFFFFF">
 
     <LinearLayout
-        android:id="@+id/apiContainer"
+        android:id="@+id/authOverlay"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
         android:orientation="vertical"
-        android:padding="20dp"
-        android:visibility="gone"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Step 1: API Configuration" android:textStyle="bold" android:textSize="18sp" android:layout_marginBottom="10dp"/>
-        <EditText android:id="@+id/etApiId" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API ID" android:inputType="number" />
-        <EditText android:id="@+id/etApiHash" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API Hash" />
-        <Button android:id="@+id/btnSaveApi" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Save API" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/loginContainer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="20dp"
-        android:visibility="gone"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent">
-
-        <TextView
-            android:id="@+id/tvStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Initializing..."
-            android:textStyle="bold"
-            android:textColor="@color/telegram_blue"
-            android:gravity="center"
-            android:layout_marginBottom="20dp" />
-
-        <LinearLayout
-            android:id="@+id/phoneLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
-            <EditText android:id="@+id/etPhone" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Phone (+972...)" android:inputType="phone" />
-            <Button android:id="@+id/btnSendCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Send SMS Code" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/codeLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone"
-            android:layout_marginTop="10dp">
-            <EditText android:id="@+id/etCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Enter 5-digit Code" android:inputType="number" />
-            <Button android:id="@+id/btnVerify" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Verify &amp; Login" />
-        </LinearLayout>
+        android:padding="20dp">
+        
+        <include layout="@layout/api_config_part" android:id="@+id/apiPart" />
+        <include layout="@layout/login_part" android:id="@+id/loginPart" />
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvChats"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:visibility="gone"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/btnSettings" />
+        android:layout_height="match_parent"
+        android:layout_above="@id/btnSettings"
+        android:visibility="gone" />
 
-    <Button android:id="@+id/btnSettings" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Settings" android:visibility="gone" app:layout_constraintBottom_toBottomOf="parent" />
+    <Button
+        android:id="@+id/btnSettings"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:layout_alignParentBottom="true"
+        android:text="Settings / Watermark"
+        android:backgroundTint="@color/telegram_blue"
+        android:textColor="@color/white"
+        android:visibility="gone" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+</RelativeLayout>
