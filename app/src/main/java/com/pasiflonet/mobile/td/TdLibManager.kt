@@ -45,58 +45,64 @@ object TdLibManager {
                     client?.send(params, null)
                 }
             }
-            is TdApi.UpdateNewChat -> chatsMap[update.chat.id] = update.chat
+            is TdApi.UpdateNewChat -> {
+                chatsMap[update.chat.id] = update.chat
+                refreshChatList()
+            }
             is TdApi.UpdateChatPosition -> {
                 if (update.position.list is TdApi.ChatListMain) {
                     chatPositions[update.chatId] = update.position.order
                     refreshChatList()
                 }
             }
-            is TdApi.UpdateFile -> {
-                if (update.file.local.isDownloadingCompleted) {
-                    // עדכון הרשימה כדי שהאדפטר יזהה שהקובץ מוכן
-                    _currentMessages.value = _currentMessages.value.toList()
+            is TdApi.UpdateChatLastMessage -> {
+                chatsMap[update.chatId]?.let {
+                    it.lastMessage = update.lastMessage
+                    refreshChatList()
                 }
             }
             is TdApi.UpdateNewMessage -> {
+                // עדכון הודעות בתוך צ'אט פתוח
                 val current = _currentMessages.value.toMutableList()
                 if (current.isNotEmpty() && current.first().chatId == update.message.chatId) {
                     current.add(0, update.message)
                     _currentMessages.value = current
+                }
+                // עדכון הודעה אחרונה ברשימת הצ'אטים
+                chatsMap[update.message.chatId]?.let {
+                    it.lastMessage = update.message
+                    refreshChatList()
+                }
+            }
+            is TdApi.UpdateFile -> {
+                if (update.file.local.isDownloadingCompleted) {
+                    _currentMessages.value = _currentMessages.value.toList()
                 }
             }
         }
     }
 
     private fun refreshChatList() {
-        val sorted = chatsMap.values.filter { chatPositions.containsKey(it.id) }.sortedByDescending { chatPositions[it.id] }
-        _chatList.value = sorted
+        val sorted = chatsMap.values
+            .filter { chatPositions.containsKey(it.id) }
+            .sortedByDescending { chatPositions[it.id] ?: 0L }
+        _chatList.value = sorted.toList()
     }
 
     fun sendPhone(phone: String) = client?.send(TdApi.SetAuthenticationPhoneNumber(phone, null), null)
     fun sendCode(code: String) = client?.send(TdApi.CheckAuthenticationCode(code), null)
     
     fun loadChatHistory(chatId: Long) {
+        _currentMessages.value = emptyList() // ניקוי לפני טעינה
         client?.send(TdApi.GetChatHistory(chatId, 0, 0, 50, false)) { res ->
             if (res is TdApi.Messages) {
                 _currentMessages.value = res.messages.toList()
-                res.messages.forEach { downloadMediaIfNeeded(it) }
             }
         }
     }
 
-    // הפונקציה שהייתה חסרה
     fun downloadFile(fileId: Int) {
         client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
-    }
-
-    private fun downloadMediaIfNeeded(msg: TdApi.Message) {
-        val fileId = when (val c = msg.content) {
-            is TdApi.MessagePhoto -> c.photo.sizes.lastOrNull()?.photo?.id
-            is TdApi.MessageVideo -> c.video.video.id
-            else -> null
-        }
-        fileId?.let { downloadFile(it) }
     }
 
     fun sendFinalMessage(username: String, text: String, filePath: String?, isVideo: Boolean) {
