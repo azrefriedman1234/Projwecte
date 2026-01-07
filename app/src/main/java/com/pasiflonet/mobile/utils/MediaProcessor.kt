@@ -1,12 +1,8 @@
 package com.pasiflonet.mobile.utils
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.net.Uri
 import android.util.Log
-import com.pasiflonet.mobile.utils.BlurRect // Import מתוקן
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
@@ -19,93 +15,103 @@ object MediaProcessor {
         inputPath: String,
         outputPath: String,
         isVideo: Boolean,
-        blurRects: List<BlurRect>,
+        rects: List<BlurRect>,
         logoUri: Uri?,
         lX: Float, lY: Float, lScale: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        if (isVideo) {
-            processVideoFFmpeg(context, inputPath, outputPath, blurRects, logoUri, lX, lY, lScale, onComplete)
-        } else {
-            processImageCanvas(context, inputPath, outputPath, blurRects, logoUri, lX, lY, lScale)
-            onComplete(true)
-        }
-    }
-
-    private fun processVideoFFmpeg(
-        ctx: Context, inPath: String, outPath: String,
-        rects: List<BlurRect>, logoUri: Uri?,
-        lX: Float, lY: Float, lScale: Float,
-        onComplete: (Boolean) -> Unit
-    ) {
-        val inputs = mutableListOf("-y", "-i", inPath)
-        var filterComplex = "[0:v]null[v0];" 
-        var lastStream = "[v0]"
-        
-        // הערה: בגרסה זו הפישוט של הטשטוש כדי למנוע קריסה ללא פילטרים מורכבים
-        // במקום זה נתמקד בלוגו
-        
-        if (logoUri != null) {
-            val logoFile = File(ctx.cacheDir, "temp_logo.png")
+        // אם אין עריכות בכלל (בלי טשטוש ובלי לוגו), פשוט מעתיקים את הקובץ
+        if (rects.isEmpty() && logoUri == null) {
             try {
-                ctx.contentResolver.openInputStream(logoUri)?.use { input ->
-                    FileOutputStream(logoFile).use { output -> input.copyTo(output) }
-                }
-                inputs.add("-i")
-                inputs.add(logoFile.absolutePath)
-                
-                val xPos = "(main_w-overlay_w)*$lX"
-                val yPos = "(main_h-overlay_h)*$lY"
-                // סקייל לוגו
-                filterComplex += "[1:v]scale=iw*0.2*$lScale:-1[logo];$lastStream[logo]overlay=$xPos:$yPos"
+                File(inputPath).copyTo(File(outputPath), overwrite = true)
+                onComplete(true)
             } catch (e: Exception) {
-                Log.e("MediaProcessor", "Logo Error", e)
+                e.printStackTrace()
+                onComplete(false)
             }
-        } else {
-            filterComplex += "${lastStream}null"
+            return
         }
 
-        val cmd = inputs + listOf("-filter_complex", filterComplex, "-c:a", "copy", "-preset", "ultrafast", outPath)
+        // הכנת לוגו זמני אם צריך
+        var logoPath: String? = null
+        if (logoUri != null) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(logoUri)
+                val tempLogo = File(context.cacheDir, "temp_logo.png")
+                val outputStream = FileOutputStream(tempLogo)
+                inputStream?.copyTo(outputStream)
+                inputStream?.close()
+                outputStream.close()
+                logoPath = tempLogo.absolutePath
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // בניית פקודת FFmpeg
+        val cmd = StringBuilder()
+        cmd.append("-y -i \"$inputPath\" ") // קלט ראשי
+
+        if (logoPath != null) {
+            cmd.append("-i \"$logoPath\" ") // קלט לוגו
+        }
+
+        cmd.append("-filter_complex \"")
         
-        FFmpegKit.executeAsync(cmd.joinToString(" ")) { session ->
-            if (ReturnCode.isSuccess(session.returnCode)) {
+        // 1. שלב הטשטוש (Blur)
+        var lastStream = "[0:v]" // הזרם הנוכחי שאנחנו עובדים עליו
+        
+        rects.forEachIndexed { index, rect ->
+            // המרה מקואורדינטות יחסיות (0.0-1.0) לפיקסלים
+            // x, y, w, h
+            val blurCmd = "boxblur=10:1:enable='between(t,0,10000)':enable='between(x,iw*${rect.left},iw*${rect.right})*between(y,ih*${rect.top},ih*${rect.bottom})'"
+            // הערה: הדרך היעילה יותר ב-FFmpeg היא להשתמש ב-delogo או crop+blur+overlay
+            // לצורך פשטות ויציבות נשתמש ב-delogo שמיועד בדיוק להסרת לוגואים/טשטוש אזורים
+            // delogo=x=10:y=10:w=100:h=100
+            
+            // שיטה יציבה: delogo
+            val nextStream = "[v${index+1}]"
+            cmd.append("$lastStream delogo=x=iw*${rect.left}:y=ih*${rect.top}:w=iw*${rect.right-rect.left}:h=ih*${rect.bottom-rect.top} $nextStream;")
+            lastStream = nextStream
+        }
+
+        // 2. שלב הלוגו (Overlay)
+        if (logoPath != null) {
+            // חישוב גודל הלוגו יחסית למסך (בהנחה שהמסך הוא 1080p לצורך פרופורציה, או שימוש ב-scale2ref)
+            // נשתמש ברוחב יחסי: נניח שהלוגו צריך להיות 20% מרוחב המסך כפול הסקייל
+            val scaleFilter = "[1:v]scale=iw*${lScale}:-1[logo];" 
+            cmd.append(scaleFilter)
+            
+            val overlayCmd = "$lastStream[logo]overlay=x=W*${lX}:y=H*${lY}[out]"
+            cmd.append(overlayCmd)
+        } else {
+            // אם אין לוגו, הזרם האחרון הוא הפלט
+            cmd.append("${lastStream}null[out]")
+        }
+
+        cmd.append("\" -map \"[out]\" ")
+        
+        // הגדרות קידוד (מהירות vs איכות)
+        if (isVideo) {
+            cmd.append("-c:v libx264 -preset ultrafast -crf 23 -c:a copy ")
+        } else {
+            cmd.append("-q:v 2 ") // איכות תמונה גבוהה
+        }
+
+        cmd.append("\"$outputPath\"")
+
+        Log.d("FFMPEG", "Command: $cmd")
+
+        // הרצה אסינכרונית
+        FFmpegKit.executeAsync(cmd.toString()) { session ->
+            val returnCode = session.returnCode
+            if (ReturnCode.isSuccess(returnCode)) {
+                Log.d("FFMPEG", "Success!")
                 onComplete(true)
             } else {
-                Log.e("FFmpeg", "Failed: ${session.failStackTrace}")
+                Log.e("FFMPEG", "Failed: ${session.failStackTrace}")
                 onComplete(false)
             }
         }
-    }
-
-    private fun processImageCanvas(ctx: Context, inPath: String, outPath: String, rects: List<BlurRect>, logoUri: Uri?, lX: Float, lY: Float, lScale: Float) {
-        val opts = BitmapFactory.Options().apply { inMutable = true }
-        val original = BitmapFactory.decodeFile(inPath, opts) ?: return
-        val canvas = Canvas(original)
-        val w = original.width; val h = original.height
-
-        rects.forEach { r ->
-            val left = (r.left * w).toInt(); val top = (r.top * h).toInt(); val right = (r.right * w).toInt(); val bottom = (r.bottom * h).toInt()
-            if (right > left && bottom > top) {
-                val subset = Bitmap.createBitmap(original, left, top, right - left, bottom - top)
-                val pixelated = Bitmap.createScaledBitmap(subset, Math.max(1, subset.width/20), Math.max(1, subset.height/20), false)
-                val blurred = Bitmap.createScaledBitmap(pixelated, subset.width, subset.height, true)
-                canvas.drawBitmap(blurred, left.toFloat(), top.toFloat(), null)
-            }
-        }
-
-        logoUri?.let { uri ->
-            try {
-                ctx.contentResolver.openInputStream(uri)?.use { stream ->
-                    val logo = BitmapFactory.decodeStream(stream)
-                    if (logo != null) {
-                        val baseW = w * 0.2f * lScale
-                        val ratio = logo.height.toFloat() / logo.width.toFloat()
-                        val scaled = Bitmap.createScaledBitmap(logo, baseW.toInt(), (baseW * ratio).toInt(), true)
-                        canvas.drawBitmap(scaled, lX * w, lY * h, null)
-                    }
-                }
-            } catch (e: Exception) {}
-        }
-        FileOutputStream(File(outPath)).use { out -> original.compress(Bitmap.CompressFormat.JPEG, 90, out) }
     }
 }
