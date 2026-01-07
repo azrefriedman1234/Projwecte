@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 class DetailsActivity : AppCompatActivity() {
@@ -45,35 +46,67 @@ class DetailsActivity : AppCompatActivity() {
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
-            // 1. קודם כל מציגים מיני-טאבנייל (שיהיה משהו בעיניים)
+            // 1. תצוגת בסיס: תמונה מטושטשת (הכי חשוב שיהיה משהו בעין)
             if (miniThumb != null && miniThumb.isNotEmpty()) {
                 b.ivPreview.load(miniThumb)
                 b.previewContainer.visibility = View.VISIBLE
             }
 
-            // 2. בדיקה האם יש לנו כבר קובץ איכותי ביד
-            if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists() && File(thumbPath!!).length() > 0) {
-                // יש קובץ! טוענים אותו מיד
+            // 2. הפעלת ה"צייד" להשגת התמונה החדה
+            // אנחנו מחפשים או את ה-Thumbnail הבינוני (thumbId) או את הקובץ הראשי (fileId)
+            val targetId = if (thumbId != 0) thumbId else fileId
+            
+            if (targetId != 0) {
+                // מציגים חיווי למשתמש
+                Toast.makeText(this, "⏳ Loading High Quality...", Toast.LENGTH_SHORT).show()
+                startImageHunter(targetId)
+            } else if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
+                // אם במקרה הנתיב כבר הגיע מוכן מהמסך הקודם
                 loadSharpImage(thumbPath!!)
-            } else {
-                // אין קובץ (או שהנתיב ריק).
-                // אם יש לנו מזהה (ID) של תמונה, נתחיל לצוד אותה מטלגרם
-                if (thumbId != 0) {
-                    pollForRealFile(thumbId)
-                } else if (fileId != 0) {
-                    // אם אין טאבנייל נפרד, ננסה להוריד את הקובץ הראשי
-                    pollForRealFile(fileId)
-                }
             }
             
             setupTools()
             setupMediaToggle()
 
-        } catch (e: Exception) { Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show() }
+        } catch (e: Exception) { 
+            Toast.makeText(this, "Init Error: ${e.message}", Toast.LENGTH_LONG).show() 
+        }
     }
 
-    // פונקציה לטעינת התמונה ללא Cache (כדי לוודא שזה מתעדכן)
+    // הפונקציה "הציידת" - רצה ברקע ולא מוותרת
+    private fun startImageHunter(fileIdToHunt: Int) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            var attempts = 0
+            // מנסים במשך 60 שניות (120 * 500ms)
+            while (attempts < 120) {
+                // א. מבקשים מטלגרם להוריד (עדיפות 32 = גבוהה)
+                TdLibManager.downloadFile(fileIdToHunt)
+                
+                // ב. בודקים בשרת מה הסטטוס העדכני
+                val realPath = TdLibManager.getFilePath(fileIdToHunt)
+                
+                // ג. אם יש נתיב והקובץ קיים פיזית בדיסק
+                if (realPath != null) {
+                    val file = File(realPath)
+                    if (file.exists() && file.length() > 0) {
+                        // יש! מעדכנים את המסך בראשי
+                        withContext(Dispatchers.Main) {
+                            thumbPath = realPath // מעדכנים את המשתנה הגלובלי לשליחה אח"כ
+                            loadSharpImage(realPath)
+                            Toast.makeText(this@DetailsActivity, "✅ HD Loaded", Toast.LENGTH_SHORT).show()
+                        }
+                        break // סיימנו, יוצאים מהלולאה
+                    }
+                }
+                
+                delay(500) // מחכים חצי שנייה
+                attempts++
+            }
+        }
+    }
+
     private fun loadSharpImage(path: String) {
+        // טעינה כפויה בלי Cache כדי לוודא שרואים את השינוי
         b.ivPreview.load(File(path)) {
             memoryCachePolicy(CachePolicy.DISABLED)
             diskCachePolicy(CachePolicy.DISABLED)
@@ -82,29 +115,7 @@ class DetailsActivity : AppCompatActivity() {
         b.previewContainer.visibility = View.VISIBLE
     }
 
-    // התיקון הגדול: לולאה ששואלת את טלגרם "מה הנתיב החדש?"
-    private fun pollForRealFile(id: Int) {
-        lifecycleScope.launch {
-            var attempts = 0
-            while (attempts < 60) { // מנסים למשך 30 שניות
-                // 1. מבקשים מטלגרם להוריד
-                TdLibManager.downloadFile(id)
-                
-                // 2. שואלים: "האם זה ירד? ואם כן, איפה זה?"
-                val realPath = TdLibManager.getFilePath(id)
-                
-                if (realPath != null && File(realPath).exists()) {
-                    // יש! קיבלנו נתיב אמיתי וקיים
-                    loadSharpImage(realPath)
-                    break
-                }
-                
-                delay(500) // מחכים חצי שנייה ושואלים שוב
-                attempts++
-            }
-        }
-    }
-
+    // --- שאר הפונקציות נשארות זהות (העתק-הדבק מהגרסה המתוקנת) ---
     private fun setupMediaToggle() {
         b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
@@ -119,8 +130,6 @@ class DetailsActivity : AppCompatActivity() {
         b.btnModeBlur.isEnabled = enable; b.btnModeLogo.isEnabled = enable; b.sbLogoSize.isEnabled = enable
         if (!enable) { b.drawingView.visibility = View.GONE; b.ivDraggableLogo.visibility = View.GONE; b.drawingView.isBlurMode = false }
     }
-
-    private fun disableVisualTools() { b.btnModeBlur.isEnabled = false; b.btnModeLogo.isEnabled = false; b.sbLogoSize.isEnabled = false }
 
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f }
@@ -157,7 +166,7 @@ class DetailsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val repo = DataStoreRepo(this@DetailsActivity)
             val target = repo.targetUsername.first() ?: ""
-            if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Set Target Channel!", Toast.LENGTH_SHORT).show(); return@launch }
+            if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Please set Target Channel in Settings!", Toast.LENGTH_LONG).show(); return@launch }
             
             val includeMedia = b.swIncludeMedia.isChecked
             if (!includeMedia) {
@@ -172,19 +181,20 @@ class DetailsActivity : AppCompatActivity() {
             val lX = if (b.previewContainer.width > 0) b.ivDraggableLogo.x / b.previewContainer.width else 0f
             val lY = if (b.previewContainer.height > 0) b.ivDraggableLogo.y / b.previewContainer.height else 0f
             
-            // שימוש בנתיב המעודכן ביותר שיש לנו
-            var finalPath = thumbPath
-            // אם הצלחנו להשיג נתיב חדש בלולאה, הוא כרגע ב-ImageView אבל לא במשתנה.
-            // ליתר ביטחון ננסה להשיג את הנתיב המלא של הקובץ המקורי (fileId)
-            val realMainPath = TdLibManager.getFilePath(fileId)
-            if (realMainPath != null) finalPath = realMainPath
+            // שימוש בנתיב המעודכן ביותר שהצייד מצא
+            val finalPath = thumbPath
             
+            if (finalPath == null || !File(finalPath).exists()) {
+                 Toast.makeText(this@DetailsActivity, "❌ Media not ready yet. Please wait a second.", Toast.LENGTH_SHORT).show()
+                 return@launch
+            }
+
             TdLibManager.processAndSendInBackground(
-                fileId = fileId, thumbPath = finalPath ?: "", isVideo = isVideo,
+                fileId = fileId, thumbPath = finalPath, isVideo = isVideo,
                 caption = b.etCaption.text.toString(), targetUsername = target,
                 rects = b.drawingView.rects.toList(), logoUri = logoUri, lX = lX, lY = lY, lScale = logoScale
             )
-            Toast.makeText(this@DetailsActivity, "Media Sending...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@DetailsActivity, "Processing & Sending...", Toast.LENGTH_SHORT).show()
             finish()
         }
     }
