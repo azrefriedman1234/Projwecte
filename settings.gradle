@@ -6,8 +6,8 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
-    // זה מכריח את כל המודולים להשתמש ברשימה הזו בלבד
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    // התיקון: במקום FAIL_ON_PROJECT_REPOS, אנחנו אומרים לו להעדיף את זה אבל לא לקרוס
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
