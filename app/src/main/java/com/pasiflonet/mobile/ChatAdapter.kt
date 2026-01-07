@@ -2,9 +2,9 @@ package com.pasiflonet.mobile
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
 import com.pasiflonet.mobile.databinding.ItemMessageRowBinding
+import com.pasiflonet.mobile.td.TdLibManager
 import org.drinkless.tdlib.TdApi
 import java.util.Date
 import java.text.SimpleDateFormat
@@ -32,26 +32,43 @@ class ChatAdapter(
         holder.b.tvTime.text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.date.toLong() * 1000))
         var text = ""
         var type = "Text"
+        var fileIdToAutoDownload = 0
         
         when (msg.content) {
-            is TdApi.MessageText -> { text = (msg.content as TdApi.MessageText).text.text; type = "📝" }
-            is TdApi.MessagePhoto -> { text = (msg.content as TdApi.MessagePhoto).caption.text; type = "📷" }
-            is TdApi.MessageVideo -> { text = (msg.content as TdApi.MessageVideo).caption.text; type = "🎥" }
+            is TdApi.MessageText -> { 
+                text = (msg.content as TdApi.MessageText).text.text
+                type = "📝" 
+            }
+            is TdApi.MessagePhoto -> { 
+                val content = msg.content as TdApi.MessagePhoto
+                text = content.caption.text
+                type = "📷"
+                // זיהוי הקובץ הכי גדול להורדה אוטומטית
+                if (content.photo.sizes.isNotEmpty()) {
+                    fileIdToAutoDownload = content.photo.sizes.last().photo.id
+                }
+            }
+            is TdApi.MessageVideo -> { 
+                val content = msg.content as TdApi.MessageVideo
+                text = content.caption.text
+                type = "🎥"
+                // זיהוי הוידאו להורדה אוטומטית
+                fileIdToAutoDownload = content.video.video.id
+            }
         }
         
         holder.b.tvMsgText.text = if (text.isEmpty()) "No Caption" else text
         holder.b.tvMediaType.text = type
         
-        // הגדרת הלחיצה עם הודעת דיבוג
-        holder.b.btnDetails.setOnClickListener { 
-            // הודעה ראשונה: לוודא שהכפתור פיזית עובד
-            // Toast.makeText(holder.itemView.context, "Button Click Detected!", Toast.LENGTH_SHORT).show()
-            
-            // קריאה לפונקציה הראשית
-            onDetailsClick(msg) 
+        // --- זה השינוי הגדול: הורדה אוטומטית ---
+        // ברגע שהשורה מופיעה על המסך, אנחנו מבקשים מטלגרם להוריד את הקובץ
+        if (fileIdToAutoDownload != 0) {
+            TdLibManager.downloadFile(fileIdToAutoDownload)
         }
+
+        holder.b.btnDetails.setOnClickListener { onDetailsClick(msg) }
         
-        // ביטול לחיצה על השורה עצמה
+        // ביטול לחיצה על השורה עצמה (רק הכפתור פעיל)
         holder.itemView.setOnClickListener { null }
     }
 
