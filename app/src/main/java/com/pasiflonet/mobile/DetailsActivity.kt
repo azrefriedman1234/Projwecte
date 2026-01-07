@@ -12,12 +12,10 @@ import coil.load
 import coil.request.CachePolicy
 import com.pasiflonet.mobile.databinding.ActivityDetailsBinding
 import com.pasiflonet.mobile.td.TdLibManager
-import com.pasiflonet.mobile.utils.DataStoreRepo
 import com.pasiflonet.mobile.utils.MediaProcessor
 import com.pasiflonet.mobile.utils.TranslationManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -46,67 +44,49 @@ class DetailsActivity : AppCompatActivity() {
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
-            // 1. תצוגת בסיס: תמונה מטושטשת (הכי חשוב שיהיה משהו בעין)
             if (miniThumb != null && miniThumb.isNotEmpty()) {
                 b.ivPreview.load(miniThumb)
                 b.previewContainer.visibility = View.VISIBLE
             }
 
-            // 2. הפעלת ה"צייד" להשגת התמונה החדה
-            // אנחנו מחפשים או את ה-Thumbnail הבינוני (thumbId) או את הקובץ הראשי (fileId)
             val targetId = if (thumbId != 0) thumbId else fileId
-            
             if (targetId != 0) {
-                // מציגים חיווי למשתמש
                 Toast.makeText(this, "⏳ Loading High Quality...", Toast.LENGTH_SHORT).show()
                 startImageHunter(targetId)
             } else if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
-                // אם במקרה הנתיב כבר הגיע מוכן מהמסך הקודם
                 loadSharpImage(thumbPath!!)
             }
             
             setupTools()
             setupMediaToggle()
 
-        } catch (e: Exception) { 
-            Toast.makeText(this, "Init Error: ${e.message}", Toast.LENGTH_LONG).show() 
-        }
+        } catch (e: Exception) { Toast.makeText(this, "Init Error: ${e.message}", Toast.LENGTH_LONG).show() }
     }
 
-    // הפונקציה "הציידת" - רצה ברקע ולא מוותרת
     private fun startImageHunter(fileIdToHunt: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
             var attempts = 0
-            // מנסים במשך 60 שניות (120 * 500ms)
             while (attempts < 120) {
-                // א. מבקשים מטלגרם להוריד (עדיפות 32 = גבוהה)
                 TdLibManager.downloadFile(fileIdToHunt)
-                
-                // ב. בודקים בשרת מה הסטטוס העדכני
                 val realPath = TdLibManager.getFilePath(fileIdToHunt)
-                
-                // ג. אם יש נתיב והקובץ קיים פיזית בדיסק
                 if (realPath != null) {
                     val file = File(realPath)
                     if (file.exists() && file.length() > 0) {
-                        // יש! מעדכנים את המסך בראשי
                         withContext(Dispatchers.Main) {
-                            thumbPath = realPath // מעדכנים את המשתנה הגלובלי לשליחה אח"כ
+                            thumbPath = realPath
                             loadSharpImage(realPath)
                             Toast.makeText(this@DetailsActivity, "✅ HD Loaded", Toast.LENGTH_SHORT).show()
                         }
-                        break // סיימנו, יוצאים מהלולאה
+                        break
                     }
                 }
-                
-                delay(500) // מחכים חצי שנייה
+                delay(500)
                 attempts++
             }
         }
     }
 
     private fun loadSharpImage(path: String) {
-        // טעינה כפויה בלי Cache כדי לוודא שרואים את השינוי
         b.ivPreview.load(File(path)) {
             memoryCachePolicy(CachePolicy.DISABLED)
             diskCachePolicy(CachePolicy.DISABLED)
@@ -115,7 +95,6 @@ class DetailsActivity : AppCompatActivity() {
         b.previewContainer.visibility = View.VISIBLE
     }
 
-    // --- שאר הפונקציות נשארות זהות (העתק-הדבק מהגרסה המתוקנת) ---
     private fun setupMediaToggle() {
         b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
@@ -135,14 +114,15 @@ class DetailsActivity : AppCompatActivity() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f }
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false
-            lifecycleScope.launch {
-                try {
-                    val uriStr = DataStoreRepo(this@DetailsActivity).logoUri.first()
-                    b.ivDraggableLogo.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f
-                    if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.clearColorFilter() } 
-                    else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
-                } catch (e: Exception) { }
-            }
+            try {
+                // שימוש ב-SharedPreferences לטעינת הלוגו
+                val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+                val uriStr = prefs.getString("logo_uri", null)
+                
+                b.ivDraggableLogo.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f
+                if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.clearColorFilter() } 
+                else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
+            } catch (e: Exception) { }
         }
         b.ivDraggableLogo.setOnTouchListener { view, event ->
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
@@ -164,9 +144,11 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun sendData() {
         lifecycleScope.launch {
-            val repo = DataStoreRepo(this@DetailsActivity)
-            val target = repo.targetUsername.first() ?: ""
-            if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Please set Target Channel in Settings!", Toast.LENGTH_LONG).show(); return@launch }
+            // שימוש ב-SharedPreferences לקבלת ערוץ היעד
+            val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+            val target = prefs.getString("target_username", "") ?: ""
+            
+            if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Go to Settings and set Target Channel!", Toast.LENGTH_LONG).show(); return@launch }
             
             val includeMedia = b.swIncludeMedia.isChecked
             if (!includeMedia) {
@@ -176,12 +158,11 @@ class DetailsActivity : AppCompatActivity() {
                 return@launch
             }
 
-            val logoUriStr = repo.logoUri.first()
+            val logoUriStr = prefs.getString("logo_uri", null)
             val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
             val lX = if (b.previewContainer.width > 0) b.ivDraggableLogo.x / b.previewContainer.width else 0f
             val lY = if (b.previewContainer.height > 0) b.ivDraggableLogo.y / b.previewContainer.height else 0f
             
-            // שימוש בנתיב המעודכן ביותר שהצייד מצא
             val finalPath = thumbPath
             
             if (finalPath == null || !File(finalPath).exists()) {
