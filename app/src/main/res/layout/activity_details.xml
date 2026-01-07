@@ -16,31 +16,12 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toStartOf="@id/controlsGuideline">
 
-        <ImageView
-            android:id="@+id/ivPreview"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:scaleType="fitCenter"/>
-
-        <com.pasiflonet.mobile.ui.DrawingView
-            android:id="@+id/drawingView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"/>
-
-        <ImageView
-            android:id="@+id/ivDraggableLogo"
-            android:layout_width="100dp"
-            android:layout_height="100dp"
-            android:visibility="gone"/>
-            
+        <ImageView android:id="@+id/ivPreview" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter"/>
+        <com.pasiflonet.mobile.ui.DrawingView android:id="@+id/drawingView" android:layout_width="match_parent" android:layout_height="match_parent"/>
+        <ImageView android:id="@+id/ivDraggableLogo" android:layout_width="100dp" android:layout_height="100dp" android:visibility="gone"/>
     </FrameLayout>
 
-    <androidx.constraintlayout.widget.Guideline
-        android:id="@+id/controlsGuideline"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        app:layout_constraintGuide_percent="0.65" />
+    <androidx.constraintlayout.widget.Guideline android:id="@+id/controlsGuideline" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="vertical" app:layout_constraintGuide_percent="0.65" />
 
     <LinearLayout
         android:layout_width="0dp"
@@ -53,49 +34,15 @@
         app:layout_constraintBottom_toTopOf="@id/bottomPanel">
 
         <TextView android:text="Tools" android:textColor="#FFF" android:textStyle="bold"/>
+        <Button android:id="@+id/btnModeBlur" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="💧 Blur Mode" android:backgroundTint="#444444"/>
+        <Button android:id="@+id/btnModeLogo" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="🖼️ Add Logo" android:backgroundTint="#444444"/>
         
-        <Button
-            android:id="@+id/btnModeBlur"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="💧 Blur Mode"
-            android:backgroundTint="#444444"/>
-
-        <Button
-            android:id="@+id/btnModeLogo"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="🖼️ Add Logo"
-            android:backgroundTint="#444444"/>
-
         <TextView android:text="Logo Size" android:textColor="#AAA" android:layout_marginTop="10dp"/>
-        <SeekBar
-            android:id="@+id/sbLogoSize"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:max="200"
-            android:progress="100"/>
+        <SeekBar android:id="@+id/sbLogoSize" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="200" android:progress="100"/>
 
         <TextView android:text="Caption" android:textColor="#FFF" android:layout_marginTop="20dp"/>
-        <EditText
-            android:id="@+id/etCaption"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:background="#33FFFFFF"
-            android:textColor="#FFF"
-            android:gravity="top|right"
-            android:hint="Edit caption..."
-            android:padding="5dp"/>
-            
-        <Button
-            android:id="@+id/btnTranslate"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="🌐 Translate to HE"
-            android:textColor="#4CAF50"
-            style="@style/Widget.MaterialComponents.Button.TextButton"/>
-
+        <EditText android:id="@+id/etCaption" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:background="#33FFFFFF" android:textColor="#FFF" android:gravity="top|right" android:hint="Edit caption..." android:padding="5dp"/>
+        <Button android:id="@+id/btnTranslate" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="🌐 Translate to HE" android:textColor="#4CAF50" style="@style/Widget.MaterialComponents.Button.TextButton"/>
     </LinearLayout>
 
     <LinearLayout
@@ -105,23 +52,7 @@
         android:orientation="horizontal"
         android:padding="10dp"
         app:layout_constraintBottom_toBottomOf="parent">
-
-        <Button
-            android:id="@+id/btnCancel"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="❌ Close"
-            android:backgroundTint="#D32F2F"/>
-
-        <Button
-            android:id="@+id/btnSend"
-            android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="📤 Send Now"
-            android:backgroundTint="#2196F3"
-            android:layout_marginStart="10dp"/>
+        <Button android:id="@+id/btnCancel" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="❌ Close" android:backgroundTint="#D32F2F"/>
+        <Button android:id="@+id/btnSend" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="📤 Send Now" android:backgroundTint="#2196F3" android:layout_marginStart="10dp"/>
     </LinearLayout>
-
 </androidx.constraintlayout.widget.ConstraintLayout>
