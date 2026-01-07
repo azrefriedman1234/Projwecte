@@ -8,50 +8,67 @@ import java.io.File
 import java.io.FileOutputStream
 
 object MediaProcessor {
+
+    // הפונקציה הזו רצה ברקע וצורבת את העריכה על התמונה המקורית
     fun processImage(
         context: Context,
         inputPath: String,
         outputPath: String,
         blurRects: List<BlurRect>,
         logoUri: Uri?,
-        logoX: Float,
-        logoY: Float
+        logoX_percent: Float, // מיקום יחסי משמאל
+        logoY_percent: Float, // מיקום יחסי מלמעלה
+        logoScale: Float      // קנה מידה
     ) {
         val options = BitmapFactory.Options().apply { inMutable = true }
-        val original = BitmapFactory.decodeFile(inputPath, options) ?: return
+        var original = BitmapFactory.decodeFile(inputPath, options) ?: return
+        
+        // יצירת קנבס לציור על התמונה
         val canvas = Canvas(original)
-        val bW = original.width
-        val bH = original.height
+        val w = original.width
+        val h = original.height
 
-        blurRects.forEach { relative ->
-            val left = (relative.rect.left * bW).toInt().coerceAtLeast(0)
-            val top = (relative.rect.top * bH).toInt().coerceAtLeast(0)
-            val right = (relative.rect.right * bW).toInt().coerceAtMost(bW)
-            val bottom = (relative.rect.bottom * bH).toInt().coerceAtMost(bH)
-            val w = right - left
-            val h = bottom - top
-            if (w > 5 && h > 5) {
-                val subset = Bitmap.createBitmap(original, left, top, w, h)
-                val pixelated = Bitmap.createScaledBitmap(subset, w/20 + 1, h/20 + 1, false)
-                val finalBlur = Bitmap.createScaledBitmap(pixelated, w, h, true)
-                canvas.drawBitmap(finalBlur, left.toFloat(), top.toFloat(), null)
+        // 1. יישום טשטוש
+        blurRects.forEach { r ->
+            val left = (r.left * w).toInt()
+            val top = (r.top * h).toInt()
+            val right = (r.right * w).toInt()
+            val bottom = (r.bottom * h).toInt()
+            
+            if (right > left && bottom > top) {
+                // חיתוך האזור, הקטנה (פיקסול), והגדלה חזרה
+                val subset = Bitmap.createBitmap(original, left, top, right - left, bottom - top)
+                val pixelated = Bitmap.createScaledBitmap(subset, Math.max(1, subset.width / 20), Math.max(1, subset.height / 20), false)
+                val blurred = Bitmap.createScaledBitmap(pixelated, subset.width, subset.height, true)
+                canvas.drawBitmap(blurred, left.toFloat(), top.toFloat(), null)
             }
         }
 
+        // 2. הוספת לוגו
         logoUri?.let { uri ->
             try {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
                     val logo = BitmapFactory.decodeStream(stream)
                     if (logo != null) {
-                        val targetLogoW = (bW * 0.15).toInt()
-                        val targetLogoH = (logo.height * targetLogoW) / logo.width
-                        val scaledLogo = Bitmap.createScaledBitmap(logo, targetLogoW, targetLogoH, true)
-                        canvas.drawBitmap(scaledLogo, logoX * bW, logoY * bH, null)
+                        // חישוב גודל הלוגו יחסית לתמונה המקורית
+                        // נניח שגודל בסיס הוא 20% רוחב תמונה * הסקייל מהסליידר
+                        val baseWidth = w * 0.2f * logoScale
+                        val ratio = logo.height.toFloat() / logo.width.toFloat()
+                        val finalW = baseWidth.toInt()
+                        val finalH = (baseWidth * ratio).toInt()
+                        
+                        val scaledLogo = Bitmap.createScaledBitmap(logo, finalW, finalH, true)
+                        
+                        val drawX = logoX_percent * w
+                        val drawY = logoY_percent * h
+                        
+                        canvas.drawBitmap(scaledLogo, drawX, drawY, null)
                     }
                 }
             } catch (e: Exception) { e.printStackTrace() }
         }
 
+        // 3. שמירה לקובץ חדש
         FileOutputStream(File(outputPath)).use { out ->
             original.compress(Bitmap.CompressFormat.JPEG, 90, out)
         }

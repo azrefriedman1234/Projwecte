@@ -1,91 +1,62 @@
 package com.pasiflonet.mobile
 
+import android.graphics.Color
 import android.view.LayoutInflater
-import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
-import com.pasiflonet.mobile.databinding.ItemMessageBinding
-import com.pasiflonet.mobile.td.TdLibManager
+import com.pasiflonet.mobile.databinding.ItemMessageRowBinding
 import org.drinkless.tdlib.TdApi
-import java.io.File
+import java.util.Date
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 class ChatAdapter(
     private var messages: List<TdApi.Message>,
-    private val onDetailsClick: (String, Boolean, String) -> Unit
-) : RecyclerView.Adapter<ChatAdapter.MessageViewHolder>() {
+    private val onDetailsClick: (TdApi.Message) -> Unit
+) : RecyclerView.Adapter<ChatAdapter.RowHolder>() {
 
     fun updateList(newMessages: List<TdApi.Message>) {
         messages = newMessages
         notifyDataSetChanged()
     }
 
-    class MessageViewHolder(val binding: ItemMessageBinding) : RecyclerView.ViewHolder(binding.root)
+    class RowHolder(val b: ItemMessageRowBinding) : RecyclerView.ViewHolder(b.root)
 
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MessageViewHolder {
-        val binding = ItemMessageBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return MessageViewHolder(binding)
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RowHolder {
+        return RowHolder(ItemMessageRowBinding.inflate(LayoutInflater.from(parent.context), parent, false))
     }
 
-    override fun onBindViewHolder(holder: MessageViewHolder, position: Int) {
-        val message = messages[position]
-        val content = message.content
-        holder.binding.cardThumbnail.visibility = View.GONE
-        holder.binding.btnProcess.visibility = View.GONE
+    override fun onBindViewHolder(holder: RowHolder, position: Int) {
+        val msg = messages[position]
+        
+        // 1. זמן
+        val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+        holder.b.tvTime.text = sdf.format(Date(msg.date.toLong() * 1000))
 
-        var filePath: String? = null
-        var isVideo = false
-        var fileIdToDownload: Int? = null
-        var originalText = ""
-
-        when (content) {
+        // 2. תוכן וסוג מדיה
+        var text = ""
+        var type = "Text"
+        
+        when (msg.content) {
             is TdApi.MessageText -> {
-                originalText = content.text.text
-                holder.binding.tvContent.text = originalText
+                text = (msg.content as TdApi.MessageText).text.text
+                type = "📝"
             }
             is TdApi.MessagePhoto -> {
-                originalText = content.caption.text
-                holder.binding.tvContent.text = if (originalText.isEmpty()) "Photo" else originalText
-                holder.binding.cardThumbnail.visibility = View.VISIBLE
-                val photo = content.photo.sizes.lastOrNull()?.photo
-                if (photo != null) {
-                    if (photo.local.isDownloadingCompleted) {
-                        filePath = photo.local.path
-                        holder.binding.ivThumbnail.load(File(filePath))
-                    } else {
-                        fileIdToDownload = photo.id
-                    }
-                }
+                text = (msg.content as TdApi.MessagePhoto).caption.text
+                type = "📷"
             }
             is TdApi.MessageVideo -> {
-                originalText = content.caption.text
-                holder.binding.tvContent.text = if (originalText.isEmpty()) "Video" else originalText
-                holder.binding.cardThumbnail.visibility = View.VISIBLE
-                val video = content.video.video
-                if (video.local.isDownloadingCompleted) {
-                    filePath = video.local.path
-                    val thumb = content.video.thumbnail?.file?.local?.path
-                    if (thumb != null) holder.binding.ivThumbnail.load(File(thumb))
-                } else {
-                    fileIdToDownload = video.id
-                }
-                isVideo = true
+                text = (msg.content as TdApi.MessageVideo).caption.text
+                type = "🎥"
             }
         }
-
-        if (filePath != null) {
-            holder.binding.btnProcess.visibility = View.VISIBLE
-            holder.binding.btnProcess.text = "Edit Media"
-            holder.binding.btnProcess.setOnClickListener {
-                onDetailsClick(filePath, isVideo, originalText)
-            }
-        } else if (fileIdToDownload != null) {
-            holder.binding.btnProcess.visibility = View.VISIBLE
-            holder.binding.btnProcess.text = "Downloading..."
-            holder.binding.btnProcess.setOnClickListener {
-                TdLibManager.downloadFile(fileIdToDownload)
-            }
-        }
+        
+        holder.b.tvMsgText.text = if (text.isEmpty()) "No Caption" else text
+        holder.b.tvMediaType.text = type
+        
+        // 3. כפתור פרטים
+        holder.b.btnDetails.setOnClickListener { onDetailsClick(msg) }
     }
 
     override fun getItemCount() = messages.size

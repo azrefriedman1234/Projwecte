@@ -3,84 +3,125 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/black">
-
-    <androidx.constraintlayout.widget.Guideline
-        android:id="@+id/verticalGuideline"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        app:layout_constraintGuide_percent="0.75" />
+    android:background="#222222">
 
     <FrameLayout
         android:id="@+id/previewContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
+        android:layout_margin="10dp"
+        android:background="#000000"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/bottomPanel"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/verticalGuideline">
+        app:layout_constraintEnd_toStartOf="@id/controlsGuideline">
 
         <ImageView
-            android:id="@+id/previewImage"
+            android:id="@+id/ivPreview"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:scaleType="fitCenter" />
+            android:scaleType="fitCenter"/>
 
-        <com.pasiflonet.mobile.ui.OverlayView
-            android:id="@+id/overlayView"
+        <com.pasiflonet.mobile.ui.DrawingView
+            android:id="@+id/drawingView"
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="match_parent"/>
 
         <ImageView
             android:id="@+id/ivDraggableLogo"
-            android:layout_width="80dp"
-            android:layout_height="80dp"
-            android:visibility="gone"
-            android:elevation="10dp" />
+            android:layout_width="100dp"
+            android:layout_height="100dp"
+            android:visibility="gone"/>
+            
     </FrameLayout>
 
-    <LinearLayout
-        android:id="@+id/controlsPanel"
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/controlsGuideline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:background="#CC222222"
-        android:padding="12dp"
-        app:layout_constraintStart_toEndOf="@id/verticalGuideline"
-        app:layout_constraintEnd_toEndOf="parent">
+        app:layout_constraintGuide_percent="0.65" />
 
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" 
-            android:text="Message Text" android:textColor="@color/white" android:textSize="12sp" />
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:orientation="vertical"
+        android:padding="10dp"
+        app:layout_constraintStart_toEndOf="@id/controlsGuideline"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/bottomPanel">
 
-        <EditText
-            android:id="@+id/etMessageText"
-            android:layout_width="match_parent"
-            android:layout_height="120dp"
-            android:hint="Edit caption here..."
-            android:textColor="@color/white"
-            android:background="#33FFFFFF"
-            android:gravity="top"
-            android:padding="8dp"
-            android:textSize="14sp"
-            android:layout_marginTop="4dp"/>
-
-        <CheckBox
-            android:id="@+id/cbIncludeMedia"
+        <TextView android:text="Tools" android:textColor="#FFF" android:textStyle="bold"/>
+        
+        <Button
+            android:id="@+id/btnModeBlur"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Include Media"
-            android:textColor="@color/white"
-            android:checked="true"
-            android:layout_marginTop="16dp"/>
+            android:text="💧 Blur Mode"
+            android:backgroundTint="#444444"/>
 
-        <View android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+        <Button
+            android:id="@+id/btnModeLogo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🖼️ Add Logo"
+            android:backgroundTint="#444444"/>
 
-        <Button android:id="@+id/btnUndo" android:layout_width="match_parent" 
-            android:layout_height="wrap_content" android:text="Undo Blur" android:layout_marginBottom="8dp"/>
+        <TextView android:text="Logo Size" android:textColor="#AAA" android:layout_marginTop="10dp"/>
+        <SeekBar
+            android:id="@+id/sbLogoSize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="200"
+            android:progress="100"/>
 
-        <Button android:id="@+id/btnSend" android:layout_width="match_parent" 
-            android:layout_height="wrap_content" android:text="SEND" 
-            android:backgroundTint="@color/telegram_blue" android:textColor="@color/white" />
+        <TextView android:text="Caption" android:textColor="#FFF" android:layout_marginTop="20dp"/>
+        <EditText
+            android:id="@+id/etCaption"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:background="#33FFFFFF"
+            android:textColor="#FFF"
+            android:gravity="top|right"
+            android:hint="Edit caption..."
+            android:padding="5dp"/>
+            
+        <Button
+            android:id="@+id/btnTranslate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🌐 Translate to HE"
+            android:textColor="#4CAF50"
+            style="@style/Widget.MaterialComponents.Button.TextButton"/>
+
     </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/bottomPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="10dp"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <Button
+            android:id="@+id/btnCancel"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="❌ Close"
+            android:backgroundTint="#D32F2F"/>
+
+        <Button
+            android:id="@+id/btnSend"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:text="📤 Send Now"
+            android:backgroundTint="#2196F3"
+            android:layout_marginStart="10dp"/>
+    </LinearLayout>
+
 </androidx.constraintlayout.widget.ConstraintLayout>

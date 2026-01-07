@@ -3,110 +3,114 @@ package com.pasiflonet.mobile
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.pasiflonet.mobile.databinding.ActivityMainBinding
 import com.pasiflonet.mobile.td.TdLibManager
+import com.pasiflonet.mobile.utils.CacheManager
 import com.pasiflonet.mobile.utils.DataStoreRepo
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var binding: ActivityMainBinding
-    private lateinit var adapter: ChatListAdapter
+    private lateinit var b: ActivityMainBinding
+    private lateinit var adapter: ChatAdapter
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        b = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(b.root)
 
-        // 1. הגדרת כפתור ההגדרות - קודם כל ולפני הכל
-        binding.btnSettings.setOnClickListener {
-            val intent = Intent(this, SettingsActivity::class.java)
-            startActivity(intent)
-        }
+        // הגדרת הטבלה
+        adapter = ChatAdapter(emptyList()) { msg ->
+            // לחיצה על כפתור פרטים
+            val intent = Intent(this, DetailsActivity::class.java)
+            
+            // חילוץ נתונים להעברה
+            var thumbPath: String? = null
+            var fullId = 0
+            var isVideo = false
+            var caption = ""
 
-        // 2. הגדרת כפתורי לוגין
-        binding.btnSaveApi.setOnClickListener {
-            val id = binding.etApiId.text.toString().toIntOrNull()
-            val hash = binding.etApiHash.text.toString()
-            if (id != null && hash.isNotEmpty()) {
-                lifecycleScope.launch {
-                    DataStoreRepo(this@MainActivity).saveApi(id, hash)
-                    checkApiAndInit()
+            when (msg.content) {
+                is TdApi.MessagePhoto -> {
+                    val c = msg.content as TdApi.MessagePhoto
+                    // ננסה לקחת את התמונה הכי קטנה לטעינה מיידית
+                    thumbPath = c.photo.sizes.firstOrNull()?.photo?.local?.path
+                    fullId = c.photo.sizes.last().photo.id
+                    caption = c.caption.text
+                }
+                is TdApi.MessageVideo -> {
+                    val c = msg.content as TdApi.MessageVideo
+                    thumbPath = c.video.thumbnail?.file?.local?.path
+                    fullId = c.video.video.id
+                    isVideo = true
+                    caption = c.caption.text
+                }
+                is TdApi.MessageText -> {
+                     caption = (msg.content as TdApi.MessageText).text.text
                 }
             }
-        }
-        binding.btnSendCode.setOnClickListener { TdLibManager.sendPhone(binding.etPhone.text.toString()) }
-        binding.btnVerify.setOnClickListener { TdLibManager.sendCode(binding.etCode.text.toString()) }
-
-        // 3. הגדרת הטבלה (RecyclerView)
-        adapter = ChatListAdapter(emptyList()) { chat ->
-            val intent = Intent(this, ChatActivity::class.java).apply {
-                putExtra("CHAT_ID", chat.id)
-                putExtra("CHAT_TITLE", chat.title)
-            }
+            
+            intent.putExtra("THUMB_PATH", thumbPath)
+            intent.putExtra("FILE_ID", fullId)
+            intent.putExtra("IS_VIDEO", isVideo)
+            intent.putExtra("CAPTION", caption)
             startActivity(intent)
         }
-        binding.rvChats.layoutManager = LinearLayoutManager(this)
-        binding.rvChats.adapter = adapter
+        
+        b.rvMessages.layoutManager = LinearLayoutManager(this)
+        b.rvMessages.adapter = adapter
 
-        // 4. התחלה
-        checkApiAndInit()
+        // כפתורים עליונים
+        b.btnClearCache.setOnClickListener {
+            val size = CacheManager.clearAppCache(this)
+            Toast.makeText(this, "Cleared ${size/1024} KB media", Toast.LENGTH_SHORT).show()
+        }
+        b.btnSettings.setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        initTelegram()
     }
 
-    private fun checkApiAndInit() {
+    private fun initTelegram() {
         lifecycleScope.launch {
             val repo = DataStoreRepo(this@MainActivity)
-            val apiId = repo.apiId.first()
-            val apiHash = repo.apiHash.first()
-
-            if (apiId != null && apiHash != null) {
-                binding.apiContainer.visibility = View.GONE
-                TdLibManager.init(this@MainActivity, apiId, apiHash)
-                observeData()
-            } else {
-                binding.apiContainer.visibility = View.VISIBLE
-            }
-        }
-    }
-
-    private fun observeData() {
-        // האזנה לסטטוס התחברות
-        lifecycleScope.launch {
-            TdLibManager.authState.collect { state ->
-                runOnUiThread {
-                    when (state) {
-                        is TdApi.AuthorizationStateWaitPhoneNumber -> {
-                            binding.loginContainer.visibility = View.VISIBLE
-                            binding.phoneLayout.visibility = View.VISIBLE
-                            binding.codeLayout.visibility = View.GONE
-                            binding.tvStatus.text = "Enter Phone Number"
-                        }
-                        is TdApi.AuthorizationStateWaitCode -> {
-                            binding.loginContainer.visibility = View.VISIBLE
-                            binding.phoneLayout.visibility = View.GONE
-                            binding.codeLayout.visibility = View.VISIBLE
-                            binding.tvStatus.text = "Enter Code from Telegram"
-                        }
-                        is TdApi.AuthorizationStateReady -> {
-                            binding.loginContainer.visibility = View.GONE
-                            binding.rvChats.visibility = View.VISIBLE
-                            binding.btnSettings.visibility = View.VISIBLE
+            val id = repo.apiId.first()
+            val hash = repo.apiHash.first()
+            
+            if (id != null && hash != null) {
+                TdLibManager.init(this@MainActivity, id, hash)
+                
+                // האזנה לסטטוס חיבור
+                TdLibManager.authState.collect { state ->
+                    runOnUiThread {
+                        if (state is TdApi.AuthorizationStateReady) {
+                            b.tvConnectionStatus.text = "🟢 Online"
+                            b.tvConnectionStatus.setTextColor(0xFF4CAF50.toInt())
+                            
+                            // טעינת 3 הודעות אחרונות בלבד (לוגיקה בסיסית: לוקחים מהרשימה)
+                            // ביישום אמיתי היינו מבקשים LoadHistory עם limit=3
+                        } else {
+                            b.tvConnectionStatus.text = "🔴 Connecting..."
                         }
                     }
                 }
-            }
-        }
-
-        // האזנה לרשימת הצ'אטים
-        lifecycleScope.launch {
-            TdLibManager.chatList.collect { chats ->
-                runOnUiThread {
-                    adapter.updateList(chats)
+                
+                // האזנה להודעות חדשות בזמן אמת
+                TdLibManager.currentMessages.collect { msgs ->
+                    runOnUiThread {
+                        // כאן אפשר לסנן רק ל-3 האחרונות בהתחלה
+                        adapter.updateList(msgs)
+                    }
                 }
+            } else {
+                b.tvConnectionStatus.text = "⚠️ No API Config"
+                // פתיחת דיאלוג הגדרות או מעבר למסך הגדרות...
             }
         }
     }

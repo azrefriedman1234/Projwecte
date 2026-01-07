@@ -1,68 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#FFFFFF">
+    android:orientation="vertical"
+    android:background="#F5F5F5"
+    android:padding="10dp">
 
     <LinearLayout
-        android:id="@+id/apiContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp"
-        android:background="#FFFFFF"
-        android:elevation="10dp"
-        android:visibility="gone"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent">
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="API SETUP" android:textSize="20sp" android:textStyle="bold"/>
-        <EditText android:id="@+id/etApiId" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API ID" android:inputType="number" />
-        <EditText android:id="@+id/etApiHash" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API Hash" />
-        <Button android:id="@+id/btnSaveApi" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SAVE" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="10dp">
+
+        <TextView
+            android:id="@+id/tvConnectionStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="🔴 Connecting..."
+            android:textStyle="bold"
+            android:textColor="#FF0000"/>
+
+        <Button
+            android:id="@+id/btnClearCache"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🧹 Clean Cache"
+            android:textSize="12sp"
+            android:backgroundTint="#FF9800"/>
+            
+        <Button
+            android:id="@+id/btnSettings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⚙️ Settings"
+            android:layout_marginStart="5dp"
+            android:backgroundTint="#607D8B"/>
     </LinearLayout>
 
     <LinearLayout
-        android:id="@+id/loginContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="24dp"
-        android:background="#FFFFFF"
-        android:elevation="10dp"
-        android:visibility="gone"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent">
-        <TextView android:id="@+id/tvStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Login Status" android:gravity="center" android:textColor="#0088CC"/>
-        
-        <LinearLayout android:id="@+id/phoneLayout" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-            <EditText android:id="@+id/etPhone" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Phone Number" android:inputType="phone" />
-            <Button android:id="@+id/btnSendCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="SEND CODE" />
-        </LinearLayout>
-
-        <LinearLayout android:id="@+id/codeLayout" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
-            <EditText android:id="@+id/etCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Verification Code" android:inputType="number" />
-            <Button android:id="@+id/btnVerify" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="VERIFY" />
-        </LinearLayout>
+        android:background="#DDDDDD"
+        android:padding="8dp">
+        <TextView android:layout_width="60dp" android:layout_height="wrap_content" android:text="Action" android:textStyle="bold"/>
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:text="Message Preview" android:gravity="right" android:textStyle="bold"/>
+        <TextView android:layout_width="50dp" android:layout_height="wrap_content" android:text="Media" android:gravity="center" android:textStyle="bold"/>
+        <TextView android:layout_width="50dp" android:layout_height="wrap_content" android:text="Time" android:gravity="center" android:textStyle="bold"/>
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/rvChats"
+        android:id="@+id/rvMessages"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:visibility="gone"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/btnSettings" />
+        android:layout_height="match_parent"
+        android:scrollbars="vertical"/>
 
-    <Button
-        android:id="@+id/btnSettings"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="SETTINGS / WATERMARK"
-        android:textSize="16sp"
-        android:backgroundTint="#2196F3"
-        android:textColor="#FFFFFF"
-        android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="parent" />
-
-</androidx.constraintlayout.widget.ConstraintLayout>
+</LinearLayout>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="8dp"
+    android:gravity="center_vertical"
+    android:background="@drawable/row_border">
+
+    <Button
+        android:id="@+id/btnDetails"
+        android:layout_width="60dp"
+        android:layout_height="40dp"
+        android:text="🔍"
+        android:backgroundTint="#2196F3"/>
+
+    <TextView
+        android:id="@+id/tvMsgText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:gravity="right"
+        android:paddingEnd="10dp"
+        android:text="Loading..."
+        android:textColor="#333333"/>
+
+    <TextView
+        android:id="@+id/tvMediaType"
+        android:layout_width="50dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="None"
+        android:textSize="10sp"/>
+
+    <TextView
+        android:id="@+id/tvTime"
+        android:layout_width="50dp"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="00:00"
+        android:textSize="10sp"/>
+
+</LinearLayout>
