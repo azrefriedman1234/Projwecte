@@ -3,12 +3,21 @@ package com.pasiflonet.mobile.utils
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
+import android.os.Handler
+import android.os.Looper
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
 
 object MediaProcessor {
+
+    private fun showToast(context: Context, msg: String) {
+        Handler(Looper.getMainLooper()).post {
+            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+        }
+    }
 
     fun processContent(
         context: Context,
@@ -20,30 +29,24 @@ object MediaProcessor {
         lX: Float, lY: Float, lScale: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        // שלב מקדים: יצירת עותק עבודה בתיקייה בטוחה (פותר בעיות הרשאה)
-        val safeInput = File(context.cacheDir, "temp_input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
+        val safeInput = File(context.cacheDir, "temp_in_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
         try {
             File(inputPath).copyTo(safeInput, overwrite = true)
         } catch (e: Exception) {
-            e.printStackTrace()
+            showToast(context, "❌ Error copying input file")
             onComplete(false)
             return
         }
 
-        // אם אין עריכות - פשוט מעבירים את הקובץ הבטוח הלאה
+        // אם אין שום עריכה - מעתיקים ויוצאים
         if (rects.isEmpty() && logoUri == null) {
             try {
                 safeInput.copyTo(File(outputPath), overwrite = true)
                 onComplete(true)
-            } catch (e: Exception) {
-                onComplete(false)
-            } finally {
-                safeInput.delete()
-            }
+            } catch (e: Exception) { onComplete(false) }
             return
         }
 
-        // הכנת לוגו
         var logoPath: String? = null
         if (logoUri != null) {
             try {
@@ -57,58 +60,62 @@ object MediaProcessor {
             } catch (e: Exception) { e.printStackTrace() }
         }
 
-        // בניית פקודת FFmpeg
+        // בניית פקודה פשוטה ובטוחה יותר
         val cmd = StringBuilder()
-        cmd.append("-y -i \"${safeInput.absolutePath}\" ") 
-
+        cmd.append("-y -i \"${safeInput.absolutePath}\" ")
         if (logoPath != null) cmd.append("-i \"$logoPath\" ")
 
         cmd.append("-filter_complex \"")
         
-        var lastStream = "[0:v]"
+        var currentStream = "[0:v]"
         
-        // טשטוש
-        rects.forEachIndexed { index, r ->
-            val nextStream = "[v${index+1}]"
-            // שימוש ב-gblur שהוא יציב יותר
-            cmd.append("$lastStream split=2[orig][blur];[blur]crop=iw*${r.right-r.left}:ih*${r.bottom-r.top}:iw*${r.left}:ih*${r.top},gblur=sigma=20[blurred];[orig][blurred]overlay=x=W*${r.left}:y=H*${r.top} $nextStream;")
-            lastStream = nextStream
+        // 1. טשטוש (Blur) - שימוש ב-avgblur או boxblur פשוטים
+        rects.forEachIndexed { i, r ->
+            val nextStream = "[v$i]"
+            // חישוב קואורדינטות בטוח
+            // crop=w:h:x:y
+            // x/y הם נקודת ההתחלה, w/h הם הרוחב והגובה
+            val w = "iw*${r.right-r.left}"
+            val h = "ih*${r.bottom-r.top}"
+            val x = "iw*${r.left}"
+            val y = "ih*${r.top}"
+            
+            // פקודה: חתוך את האזור -> טשטש אותו -> הדבק אותו חזרה על המקור
+            cmd.append("$currentStream split=2[main][tocrop];[tocrop]crop=$w:$h:$x:$y,avgblur=10[blurred];[main][blurred]overlay=$x:$y $nextStream;")
+            currentStream = nextStream
         }
 
-        // לוגו
+        // 2. לוגו (Overlay)
         if (logoPath != null) {
-            val scaleFilter = "[1:v]scale=iw*${lScale}:-1[logo];" 
-            cmd.append(scaleFilter)
-            val overlayCmd = "$lastStream[logo]overlay=x=W*${lX}:y=H*${lY}[out]"
-            cmd.append(overlayCmd)
+            // הקטנת הלוגו בהתאם לסקייל
+            cmd.append("[1:v]scale=iw*${lScale}:-1[logo];")
+            cmd.append("$currentStream[logo]overlay=x=W*${lX}:y=H*${lY}[out]")
         } else {
-            cmd.append("${lastStream}null[out]")
+            cmd.append("${currentStream}null[out]")
         }
 
         cmd.append("\" -map \"[out]\" ")
         
         if (isVideo) {
-            // הגדרות למהירות מקסימלית ותאימות לטלגרם
-            cmd.append("-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p -c:a copy ")
+            // קידוד מהיר במיוחד לוידאו
+            cmd.append("-c:v libx264 -preset ultrafast -crf 28 -c:a copy ")
         } else {
             cmd.append("-q:v 2 ")
         }
 
         cmd.append("\"$outputPath\"")
 
+        // הרצה
         FFmpegKit.executeAsync(cmd.toString()) { session ->
-            safeInput.delete() // ניקוי
+            safeInput.delete()
             if (ReturnCode.isSuccess(session.returnCode)) {
                 onComplete(true)
             } else {
-                Log.e("FFMPEG", "Failed: ${session.failStackTrace}")
-                // Fallback: אם העריכה נכשלה, נשלח את המקור כדי לא לתקוע את המשתמש
-                try {
-                    File(inputPath).copyTo(File(outputPath), overwrite = true)
-                    onComplete(true) 
-                } catch (e: Exception) {
-                    onComplete(false)
-                }
+                val logs = session.allLogsAsString
+                Log.e("FFMPEG_ERROR", logs)
+                showToast(context, "❌ Editing Failed. Check Logs.")
+                // הפעם אנחנו לא שולחים את המקור כגיבוי, כדי שתדע שזה נכשל!
+                onComplete(false) 
             }
         }
     }

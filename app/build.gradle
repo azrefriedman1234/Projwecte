@@ -11,18 +11,15 @@ android {
         applicationId "com.pasiflonet.mobile"
         minSdk 24
         targetSdk 33
-        
-        // --- ניהול גרסאות ---
-        // בכל פעם שתרצה עדכון, שנה את המספר הזה (1 -> 2 -> 3)
-        versionCode 2 
-        versionName "1.1"
+        versionCode 3
+        versionName "1.2"
 
         ndk {
+            // תמיכה בכל המעבדים הנפוצים
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
         }
     }
 
-    // הגדרת החתימה הקבועה
     signingConfigs {
         release {
             storeFile file("release.jks")
@@ -33,7 +30,6 @@ android {
     }
 
     buildTypes {
-        // עכשיו גם גרסת Debug וגם Release חתומות באותו מפתח קבוע!
         debug {
             signingConfig signingConfigs.release
         }
@@ -44,6 +40,7 @@ android {
         }
     }
     
+    // טיפול בהתנגשויות קבצי מערכת
     packagingOptions {
         pickFirst 'lib/x86/libc++_shared.so'
         pickFirst 'lib/x86_64/libc++_shared.so'
@@ -72,7 +69,10 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'com.mrljdx:ffmpeg-kit-full:6.1.4'
+    
+    // התיקון: הגרסה הרשמית והיציבה של FFmpeg
+    implementation 'com.arthenica:ffmpeg-kit-full:6.0-2'
+    
     implementation 'com.github.tdlibx:td:1.8.56'
     implementation "androidx.work:work-runtime-ktx:2.8.1"
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
