@@ -3,9 +3,14 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <application
         android:name=".App"
@@ -13,6 +18,7 @@
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="Pasiflonet"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar"
+        android:requestLegacyExternalStorage="true"
         tools:replace="android:label">
 
         <activity android:name=".MainActivity" android:exported="true">
@@ -22,7 +28,6 @@
             </intent-filter>
         </activity>
         
-        <activity android:name=".ChatActivity" android:exported="false" />
         <activity android:name=".DetailsActivity" android:exported="false" />
         <activity android:name=".SettingsActivity" android:exported="false" />
 
