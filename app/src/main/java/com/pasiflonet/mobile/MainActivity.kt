@@ -72,7 +72,6 @@ class MainActivity : AppCompatActivity() {
             // הפעלת הורדה ברקע, אבל בלי לעצור את המשתמש!
             if (fullId != 0) {
                 TdLibManager.downloadFile(fullId)
-                // Toast.makeText(this, "Downloading media in background...", Toast.LENGTH_SHORT).show()
             }
             
             // פתיחה מיידית - בלי תנאים!
