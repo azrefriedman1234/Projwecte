@@ -32,12 +32,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
-        b.btnSaveApi.setOnClickListener { /* Logic */ } // (Keeping simple for brevity in this update)
+        b.btnSaveApi.setOnClickListener {
+             val id = b.etApiId.text.toString().toIntOrNull()
+            val hash = b.etApiHash.text.toString()
+            if (id != null && hash.isNotEmpty()) {
+                lifecycleScope.launch {
+                    DataStoreRepo(this@MainActivity).saveApi(id, hash)
+                    checkApiAndInit()
+                }
+            }
+        }
         b.btnSendCode.setOnClickListener { TdLibManager.sendPhone(b.etPhone.text.toString()) }
         b.btnVerify.setOnClickListener { TdLibManager.sendCode(b.etCode.text.toString()) }
         b.btnVerifyPassword.setOnClickListener { TdLibManager.sendPassword(b.etPassword.text.toString()) }
 
         adapter = ChatAdapter(emptyList()) { msg ->
+            // הודעת דיבוג: לוודא שהלחיצה הגיעה למסך הראשי
+            Toast.makeText(this, "Opening Details...", Toast.LENGTH_SHORT).show()
+
             var thumbPath: String? = null
             var fullId = 0
             var isVideo = false
@@ -46,9 +58,7 @@ class MainActivity : AppCompatActivity() {
             when (msg.content) {
                 is TdApi.MessagePhoto -> {
                     val c = msg.content as TdApi.MessagePhoto
-                    // לוקחים את הכי קטן לתצוגה מיידית (Thumbnail)
                     thumbPath = c.photo.sizes.firstOrNull()?.photo?.local?.path
-                    // לוקחים את הכי גדול להורדה ברקע
                     fullId = if (c.photo.sizes.isNotEmpty()) c.photo.sizes.last().photo.id else 0
                     caption = c.caption.text
                 }
@@ -62,36 +72,28 @@ class MainActivity : AppCompatActivity() {
                 is TdApi.MessageText -> caption = (msg.content as TdApi.MessageText).text.text
             }
 
-            // התיקון הגדול: תמיד פותחים, תמיד מורידים ברקע
             if (fullId != 0) TdLibManager.downloadFile(fullId)
 
-            val intent = Intent(this, DetailsActivity::class.java)
-            if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
-            intent.putExtra("FILE_ID", fullId)
-            intent.putExtra("IS_VIDEO", isVideo)
-            intent.putExtra("CAPTION", caption)
-            startActivity(intent)
+            try {
+                val intent = Intent(this, DetailsActivity::class.java)
+                if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
+                intent.putExtra("FILE_ID", fullId)
+                intent.putExtra("IS_VIDEO", isVideo)
+                intent.putExtra("CAPTION", caption)
+                startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Error opening screen: ${e.message}", Toast.LENGTH_LONG).show()
+                e.printStackTrace()
+            }
         }
         
         b.rvMessages.layoutManager = LinearLayoutManager(this)
         b.rvMessages.adapter = adapter
         b.btnClearCache.setOnClickListener { CacheManager.clearAppCache(this) }
         b.btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
-        
-        // שיחזור לוגיקת כפתור API למקרה שנמחק בקיצור
-        b.btnSaveApi.setOnClickListener {
-             val id = b.etApiId.text.toString().toIntOrNull()
-            val hash = b.etApiHash.text.toString()
-            if (id != null && hash.isNotEmpty()) {
-                lifecycleScope.launch {
-                    DataStoreRepo(this@MainActivity).saveApi(id, hash)
-                    checkApiAndInit()
-                }
-            }
-        }
     }
 
-    private fun checkApiAndInit() { /* Same as before */ 
+    private fun checkApiAndInit() { 
         lifecycleScope.launch {
             val repo = DataStoreRepo(this@MainActivity)
             val apiId = repo.apiId.first()
@@ -104,7 +106,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    private fun observeAuth() { /* Same as before */
+    private fun observeAuth() {
          lifecycleScope.launch {
             TdLibManager.authState.collect { state ->
                 runOnUiThread {
@@ -121,7 +123,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch { TdLibManager.currentMessages.collect { msgs -> runOnUiThread { adapter.updateList(msgs) } } }
     }
     
-    private fun checkPermissions() { /* Same as before */ 
+    private fun checkPermissions() {
          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO))
         else requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE))
     }

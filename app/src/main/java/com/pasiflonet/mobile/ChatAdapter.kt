@@ -2,6 +2,7 @@ package com.pasiflonet.mobile
 
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
 import com.pasiflonet.mobile.databinding.ItemMessageRowBinding
 import org.drinkless.tdlib.TdApi
@@ -41,10 +42,16 @@ class ChatAdapter(
         holder.b.tvMsgText.text = if (text.isEmpty()) "No Caption" else text
         holder.b.tvMediaType.text = type
         
-        // השינוי: הפעולה קורית אך ורק בכפתור הפרטים
-        holder.b.btnDetails.setOnClickListener { onDetailsClick(msg) }
+        // הגדרת הלחיצה עם הודעת דיבוג
+        holder.b.btnDetails.setOnClickListener { 
+            // הודעה ראשונה: לוודא שהכפתור פיזית עובד
+            // Toast.makeText(holder.itemView.context, "Button Click Detected!", Toast.LENGTH_SHORT).show()
+            
+            // קריאה לפונקציה הראשית
+            onDetailsClick(msg) 
+        }
         
-        // ביטלתי את הלחיצה על שאר השורה
+        // ביטול לחיצה על השורה עצמה
         holder.itemView.setOnClickListener { null }
     }
 
