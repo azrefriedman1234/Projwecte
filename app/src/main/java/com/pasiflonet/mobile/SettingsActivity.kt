@@ -1,60 +1,58 @@
 package com.pasiflonet.mobile
 
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.pasiflonet.mobile.databinding.ActivitySettingsBinding
 import com.pasiflonet.mobile.utils.DataStoreRepo
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import java.io.File
 
 class SettingsActivity : AppCompatActivity() {
-    private lateinit var binding: ActivitySettingsBinding
+    private lateinit var b: ActivitySettingsBinding
+
+    private val pickLogo = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            lifecycleScope.launch {
+                DataStoreRepo(this@SettingsActivity).saveLogoUri(uri.toString())
+                b.ivCurrentLogo.setImageURI(uri)
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivitySettingsBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        b = ActivitySettingsBinding.inflate(layoutInflater)
+        setContentView(b.root)
 
-        // טעינת ההגדרות הקיימות
         lifecycleScope.launch {
             val repo = DataStoreRepo(this@SettingsActivity)
             val currentTarget = repo.targetUsername.first()
-            if (!currentTarget.isNullOrEmpty()) {
-                binding.etTargetUsername.setText(currentTarget)
-            }
+            val currentLogo = repo.logoUri.first()
+            
+            if (!currentTarget.isNullOrEmpty()) b.etTargetUsername.setText(currentTarget)
+            if (!currentLogo.isNullOrEmpty()) b.ivCurrentLogo.setImageURI(Uri.parse(currentLogo))
         }
 
-        // כפתור שמירה
-        binding.btnSaveSettings.setOnClickListener {
-            val target = binding.etTargetUsername.text.toString()
+        b.btnSaveSettings.setOnClickListener {
+            val target = b.etTargetUsername.text.toString()
             if (target.isNotEmpty()) {
                 lifecycleScope.launch {
                     DataStoreRepo(this@SettingsActivity).saveTargetUsername(target)
-                    Toast.makeText(this@SettingsActivity, "Target Channel Saved!", Toast.LENGTH_SHORT).show()
-                    finish() // סוגר את המסך אחרי שמירה
+                    Toast.makeText(this@SettingsActivity, "Saved!", Toast.LENGTH_SHORT).show()
+                    finish()
                 }
-            } else {
-                Toast.makeText(this, "Please enter a username", Toast.LENGTH_SHORT).show()
             }
         }
 
-        // כפתור ניקוי מטמון בטוח
-        binding.btnClearCache.setOnClickListener {
-            val cacheDir = cacheDir
-            val tdlibFiles = File(filesDir, "tdlib_files") // מדיה של טלגרם בלבד
-            
-            var count = 0
+        b.btnSelectLogo.setOnClickListener { pickLogo.launch("image/*") }
+        
+        b.btnClearCache.setOnClickListener {
             cacheDir.deleteRecursively()
-            if (tdlibFiles.exists()) {
-                tdlibFiles.listFiles()?.forEach { 
-                    it.deleteRecursively() 
-                    count++
-                }
-            }
-            Toast.makeText(this, "Cleaned temp files. Login kept safe.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Cache Cleared", Toast.LENGTH_SHORT).show()
         }
     }
 }
