@@ -1,18 +1,2 @@
-pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    // התיקון: במקום FAIL_ON_PROJECT_REPOS, אנחנו אומרים לו להעדיף את זה אבל לא לקרוס
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-    repositories {
-        google()
-        mavenCentral()
-        maven { url 'https://jitpack.io' }
-    }
-}
 rootProject.name = "PasiflonetMobile"
 include ':app'
