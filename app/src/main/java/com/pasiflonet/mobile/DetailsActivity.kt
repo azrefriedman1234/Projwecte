@@ -45,18 +45,24 @@ class DetailsActivity : AppCompatActivity() {
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
-            // 1. מיני-טאבנייל (מיידי)
+            // 1. קודם כל מציגים מיני-טאבנייל (שיהיה משהו בעיניים)
             if (miniThumb != null && miniThumb.isNotEmpty()) {
                 b.ivPreview.load(miniThumb)
                 b.previewContainer.visibility = View.VISIBLE
             }
 
-            // 2. בדיקה והורדה של HD
-            if (thumbPath != null) {
-                if (File(thumbPath!!).exists() && File(thumbPath!!).length() > 0) {
-                    loadSharpImage(thumbPath!!)
-                } else if (thumbId != 0) {
-                    forceDownloadAndShow(thumbId, thumbPath!!)
+            // 2. בדיקה האם יש לנו כבר קובץ איכותי ביד
+            if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists() && File(thumbPath!!).length() > 0) {
+                // יש קובץ! טוענים אותו מיד
+                loadSharpImage(thumbPath!!)
+            } else {
+                // אין קובץ (או שהנתיב ריק).
+                // אם יש לנו מזהה (ID) של תמונה, נתחיל לצוד אותה מטלגרם
+                if (thumbId != 0) {
+                    pollForRealFile(thumbId)
+                } else if (fileId != 0) {
+                    // אם אין טאבנייל נפרד, ננסה להוריד את הקובץ הראשי
+                    pollForRealFile(fileId)
                 }
             }
             
@@ -66,25 +72,34 @@ class DetailsActivity : AppCompatActivity() {
         } catch (e: Exception) { Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show() }
     }
 
+    // פונקציה לטעינת התמונה ללא Cache (כדי לוודא שזה מתעדכן)
     private fun loadSharpImage(path: String) {
-        // שימוש בפרמטרים שמבטלים Cache כדי להכריח טעינה מהקובץ החדש
         b.ivPreview.load(File(path)) {
             memoryCachePolicy(CachePolicy.DISABLED)
             diskCachePolicy(CachePolicy.DISABLED)
+            crossfade(true)
         }
         b.previewContainer.visibility = View.VISIBLE
     }
 
-    private fun forceDownloadAndShow(id: Int, path: String) {
+    // התיקון הגדול: לולאה ששואלת את טלגרם "מה הנתיב החדש?"
+    private fun pollForRealFile(id: Int) {
         lifecycleScope.launch {
             var attempts = 0
-            while (attempts < 60) { // 30 שניות
-                if (File(path).exists() && File(path).length() > 0) {
-                    loadSharpImage(path)
+            while (attempts < 60) { // מנסים למשך 30 שניות
+                // 1. מבקשים מטלגרם להוריד
+                TdLibManager.downloadFile(id)
+                
+                // 2. שואלים: "האם זה ירד? ואם כן, איפה זה?"
+                val realPath = TdLibManager.getFilePath(id)
+                
+                if (realPath != null && File(realPath).exists()) {
+                    // יש! קיבלנו נתיב אמיתי וקיים
+                    loadSharpImage(realPath)
                     break
                 }
-                TdLibManager.downloadFile(id) // נדנוד לשרת
-                delay(500)
+                
+                delay(500) // מחכים חצי שנייה ושואלים שוב
                 attempts++
             }
         }
@@ -157,8 +172,15 @@ class DetailsActivity : AppCompatActivity() {
             val lX = if (b.previewContainer.width > 0) b.ivDraggableLogo.x / b.previewContainer.width else 0f
             val lY = if (b.previewContainer.height > 0) b.ivDraggableLogo.y / b.previewContainer.height else 0f
             
+            // שימוש בנתיב המעודכן ביותר שיש לנו
+            var finalPath = thumbPath
+            // אם הצלחנו להשיג נתיב חדש בלולאה, הוא כרגע ב-ImageView אבל לא במשתנה.
+            // ליתר ביטחון ננסה להשיג את הנתיב המלא של הקובץ המקורי (fileId)
+            val realMainPath = TdLibManager.getFilePath(fileId)
+            if (realMainPath != null) finalPath = realMainPath
+            
             TdLibManager.processAndSendInBackground(
-                fileId = fileId, thumbPath = thumbPath ?: "", isVideo = isVideo,
+                fileId = fileId, thumbPath = finalPath ?: "", isVideo = isVideo,
                 caption = b.etCaption.text.toString(), targetUsername = target,
                 rects = b.drawingView.rects.toList(), logoUri = logoUri, lX = lX, lY = lY, lScale = logoScale
             )
