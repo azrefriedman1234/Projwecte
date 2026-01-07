@@ -17,6 +17,7 @@ import com.pasiflonet.mobile.utils.DataStoreRepo
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private lateinit var b: ActivityMainBinding
@@ -52,7 +53,6 @@ class MainActivity : AppCompatActivity() {
 
         adapter = ChatAdapter(emptyList()) { msg ->
             var thumbPath: String? = null
-            var miniThumbData: ByteArray? = null // התיקון: משתנה לשמירת המידע הבינארי של התמונה
             var fullId = 0
             var isVideo = false
             var caption = ""
@@ -60,19 +60,31 @@ class MainActivity : AppCompatActivity() {
             when (msg.content) {
                 is TdApi.MessagePhoto -> {
                     val c = msg.content as TdApi.MessagePhoto
-                    thumbPath = c.photo.sizes.firstOrNull()?.photo?.local?.path
-                    // שליפת ה-Mini Thumbnail אם קיים
-                    miniThumbData = c.photo.minithumbnail?.data
                     
+                    // --- לוגיקה חדשה: חיפוש התמונה הכי גדולה שקיימת ---
+                    // אנחנו רצים מהסוף (הכי גדול) להתחלה (הכי קטן)
+                    // ומחפשים את הראשון שכבר ירד לדיסק
+                    for (size in c.photo.sizes.reversed()) {
+                        val path = size.photo.local.path
+                        if (path.isNotEmpty() && File(path).exists()) {
+                            thumbPath = path
+                            break // מצאנו את הכי איכותי שקיים!
+                        }
+                    }
+                    
+                    // אם עדיין לא מצאנו כלום, ניקח את ה-Thumbnail הפשוט
+                    if (thumbPath == null) {
+                         thumbPath = c.photo.sizes.firstOrNull()?.photo?.local?.path
+                    }
+
+                    // תמיד נשמור את המזהה של הכי ענק כדי להוריד ברקע
                     fullId = if (c.photo.sizes.isNotEmpty()) c.photo.sizes.last().photo.id else 0
                     caption = c.caption.text
                 }
                 is TdApi.MessageVideo -> {
                     val c = msg.content as TdApi.MessageVideo
+                    // בוידאו ה-Thumbnail בדרך כלל איכותי מספיק
                     thumbPath = c.video.thumbnail?.file?.local?.path
-                    // שליפת ה-Mini Thumbnail מוידאו
-                    miniThumbData = c.video.minithumbnail?.data
-                    
                     fullId = c.video.video.id
                     isVideo = true
                     caption = c.caption.text
@@ -84,8 +96,6 @@ class MainActivity : AppCompatActivity() {
             
             val intent = Intent(this, DetailsActivity::class.java)
             if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
-            if (miniThumbData != null) intent.putExtra("MINI_THUMB", miniThumbData) // העברת המידע
-            
             intent.putExtra("FILE_ID", fullId)
             intent.putExtra("IS_VIDEO", isVideo)
             intent.putExtra("CAPTION", caption)

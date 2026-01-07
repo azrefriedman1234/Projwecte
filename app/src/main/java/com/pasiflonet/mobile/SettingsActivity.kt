@@ -11,6 +11,8 @@ import com.pasiflonet.mobile.utils.CacheManager
 import com.pasiflonet.mobile.utils.DataStoreRepo
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 
 class SettingsActivity : AppCompatActivity() {
     private lateinit var b: ActivitySettingsBinding
@@ -18,8 +20,24 @@ class SettingsActivity : AppCompatActivity() {
     private val pickLogo = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             lifecycleScope.launch {
-                DataStoreRepo(this@SettingsActivity).saveLogoUri(uri.toString())
-                b.ivCurrentLogo.setImageURI(uri)
+                try {
+                    // העתקת הקובץ לתיקייה הפרטית של האפליקציה למניעת קריסות הרשאה
+                    val inputStream = contentResolver.openInputStream(uri)
+                    val localFile = File(filesDir, "app_logo.png")
+                    val outputStream = FileOutputStream(localFile)
+                    inputStream?.copyTo(outputStream)
+                    inputStream?.close()
+                    outputStream.close()
+
+                    // שמירת הנתיב המקומי הבטוח
+                    val localUri = Uri.fromFile(localFile).toString()
+                    DataStoreRepo(this@SettingsActivity).saveLogoUri(localUri)
+                    
+                    b.ivCurrentLogo.setImageURI(Uri.parse(localUri))
+                    Toast.makeText(this@SettingsActivity, "Logo Saved Locally!", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this@SettingsActivity, "Error saving logo: ${e.message}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -37,7 +55,14 @@ class SettingsActivity : AppCompatActivity() {
             val currentLogo = repo.logoUri.first()
             
             if (!currentTarget.isNullOrEmpty()) b.etTargetUsername.setText(currentTarget)
-            if (!currentLogo.isNullOrEmpty()) b.ivCurrentLogo.setImageURI(Uri.parse(currentLogo))
+            
+            if (!currentLogo.isNullOrEmpty()) {
+                try {
+                    b.ivCurrentLogo.setImageURI(Uri.parse(currentLogo))
+                } catch (e: Exception) {
+                    // אם הלוגו הישן שבור, לא נורא
+                }
+            }
         }
 
         b.btnSaveSettings.setOnClickListener {
@@ -53,14 +78,11 @@ class SettingsActivity : AppCompatActivity() {
 
         b.btnSelectLogo.setOnClickListener { pickLogo.launch("image/*") }
         
-        // כפתור הניקוי המשודרג
         b.btnClearCache.setOnClickListener {
             lifecycleScope.launch {
                 b.btnClearCache.text = "Cleaning..."
                 b.btnClearCache.isEnabled = false
-                
                 CacheManager.clearAppCache(this@SettingsActivity)
-                
                 updateCacheSize()
                 b.btnClearCache.isEnabled = true
             }
