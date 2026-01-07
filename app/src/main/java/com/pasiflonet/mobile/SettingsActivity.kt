@@ -21,7 +21,6 @@ class SettingsActivity : AppCompatActivity() {
         if (uri != null) {
             lifecycleScope.launch {
                 try {
-                    // העתקת הקובץ לתיקייה הפרטית של האפליקציה למניעת קריסות הרשאה
                     val inputStream = contentResolver.openInputStream(uri)
                     val localFile = File(filesDir, "app_logo.png")
                     val outputStream = FileOutputStream(localFile)
@@ -29,12 +28,11 @@ class SettingsActivity : AppCompatActivity() {
                     inputStream?.close()
                     outputStream.close()
 
-                    // שמירת הנתיב המקומי הבטוח
                     val localUri = Uri.fromFile(localFile).toString()
                     DataStoreRepo(this@SettingsActivity).saveLogoUri(localUri)
                     
                     b.ivCurrentLogo.setImageURI(Uri.parse(localUri))
-                    Toast.makeText(this@SettingsActivity, "Logo Saved Locally!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@SettingsActivity, "Logo Saved!", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     Toast.makeText(this@SettingsActivity, "Error saving logo: ${e.message}", Toast.LENGTH_LONG).show()
                 }
@@ -44,53 +42,61 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        b = ActivitySettingsBinding.inflate(layoutInflater)
-        setContentView(b.root)
+        try {
+            b = ActivitySettingsBinding.inflate(layoutInflater)
+            setContentView(b.root)
 
-        updateCacheSize()
+            updateCacheSize()
 
-        lifecycleScope.launch {
-            val repo = DataStoreRepo(this@SettingsActivity)
-            val currentTarget = repo.targetUsername.first()
-            val currentLogo = repo.logoUri.first()
-            
-            if (!currentTarget.isNullOrEmpty()) b.etTargetUsername.setText(currentTarget)
-            
-            if (!currentLogo.isNullOrEmpty()) {
-                try {
-                    b.ivCurrentLogo.setImageURI(Uri.parse(currentLogo))
-                } catch (e: Exception) {
-                    // אם הלוגו הישן שבור, לא נורא
-                }
-            }
-        }
-
-        b.btnSaveSettings.setOnClickListener {
-            val target = b.etTargetUsername.text.toString()
-            if (target.isNotEmpty()) {
-                lifecycleScope.launch {
-                    DataStoreRepo(this@SettingsActivity).saveTargetUsername(target)
-                    Toast.makeText(this@SettingsActivity, "Saved!", Toast.LENGTH_SHORT).show()
-                    finish()
-                }
-            }
-        }
-
-        b.btnSelectLogo.setOnClickListener { pickLogo.launch("image/*") }
-        
-        b.btnClearCache.setOnClickListener {
             lifecycleScope.launch {
-                b.btnClearCache.text = "Cleaning..."
-                b.btnClearCache.isEnabled = false
-                CacheManager.clearAppCache(this@SettingsActivity)
-                updateCacheSize()
-                b.btnClearCache.isEnabled = true
+                val repo = DataStoreRepo(this@SettingsActivity)
+                val currentTarget = repo.targetUsername.first()
+                val currentLogo = repo.logoUri.first()
+                
+                if (!currentTarget.isNullOrEmpty()) b.etTargetUsername.setText(currentTarget)
+                
+                if (!currentLogo.isNullOrEmpty()) {
+                    try { b.ivCurrentLogo.setImageURI(Uri.parse(currentLogo)) } catch (e: Exception) {}
+                }
             }
+
+            b.btnSaveSettings.setOnClickListener {
+                val target = b.etTargetUsername.text.toString()
+                if (target.isNotEmpty()) {
+                    lifecycleScope.launch {
+                        DataStoreRepo(this@SettingsActivity).saveTargetUsername(target)
+                        Toast.makeText(this@SettingsActivity, "Saved! Target: $target", Toast.LENGTH_SHORT).show()
+                        finish()
+                    }
+                } else {
+                    Toast.makeText(this@SettingsActivity, "Please enter a channel username", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+            b.btnSelectLogo.setOnClickListener { pickLogo.launch("image/*") }
+            
+            b.btnClearCache.setOnClickListener {
+                lifecycleScope.launch {
+                    b.btnClearCache.text = "Cleaning..."
+                    b.btnClearCache.isEnabled = false
+                    CacheManager.clearAppCache(this@SettingsActivity)
+                    updateCacheSize()
+                    b.btnClearCache.isEnabled = true
+                }
+            }
+        } catch (e: Exception) {
+            // תופס כל קריסה ומציג הודעה במקום לקרוס
+            Toast.makeText(this, "Settings Error: ${e.message}", Toast.LENGTH_LONG).show()
+            finish()
         }
     }
 
     private fun updateCacheSize() {
-        val size = CacheManager.getCacheSize(this)
-        b.btnClearCache.text = "🗑️ Clear Cache (Current: $size)"
+        try {
+            val size = CacheManager.getCacheSize(this)
+            b.btnClearCache.text = "🗑️ Clear Cache (Current: $size)"
+        } catch (e: Exception) {
+            b.btnClearCache.text = "🗑️ Clear Cache"
+        }
     }
 }

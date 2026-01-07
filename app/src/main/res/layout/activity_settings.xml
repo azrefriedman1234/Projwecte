@@ -1,81 +1,92 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="24dp"
-    android:background="#FFFFFF">
+    android:background="#121212"
+    android:padding="20dp">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Channel Settings"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:textColor="#000000"
-        android:layout_marginBottom="24dp"/>
-
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Target Channel Username:"
-        android:textColor="#666666"/>
-        
-    <EditText
-        android:id="@+id/etTargetUsername"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@azrinews"
-        android:inputType="text"
-        android:padding="12dp"
-        android:background="@android:drawable/editbox_background"/>
+        android:orientation="vertical">
 
-    <Button
-        android:id="@+id/btnSaveSettings"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="SAVE CHANGES"
-        android:backgroundTint="#2196F3"
-        android:layout_marginTop="24dp"/>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Settings"
+            android:textColor="#FFFFFF"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="30dp"/>
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="#EEEEEE"
-        android:layout_marginTop="32dp"
-        android:layout_marginBottom="32dp"/>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Target Channel (Username)"
+            android:textColor="#AAAAAA"
+            android:layout_marginBottom="5dp"/>
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Watermark Logo"
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="12dp"/>
+        <EditText
+            android:id="@+id/etTargetUsername"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@channel_name"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#666666"
+            android:background="#333333"
+            android:padding="15dp"
+            android:layout_marginBottom="20dp"/>
 
-    <Button
-        android:id="@+id/btnSelectLogo"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="📂 Select Logo Image"
-        android:backgroundTint="#607D8B"/>
-        
-    <ImageView
-        android:id="@+id/ivCurrentLogo"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
-        android:layout_gravity="center"
-        android:layout_marginTop="12dp"
-        android:scaleType="fitCenter"
-        android:background="#EEEEEE"/>
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Channel Logo"
+            android:textColor="#AAAAAA"
+            android:layout_marginBottom="10dp"/>
 
-    <Button
-        android:id="@+id/btnClearCache"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Clear Temporary Files"
-        android:textColor="#FF5555"
-        android:layout_marginTop="32dp"/>
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="20dp">
 
-</LinearLayout>
+            <ImageView
+                android:id="@+id/ivCurrentLogo"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
+                android:background="#333333"
+                android:scaleType="fitCenter"/>
+
+            <Button
+                android:id="@+id/btnSelectLogo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select Logo"
+                android:layout_marginStart="20dp"/>
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#333333"
+            android:layout_marginVertical="20dp"/>
+
+        <Button
+            android:id="@+id/btnClearCache"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🗑️ Clear Cache"
+            android:backgroundTint="#FF5252"
+            android:layout_marginBottom="30dp"/>
+
+        <Button
+            android:id="@+id/btnSaveSettings"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="SAVE SETTINGS"
+            android:backgroundTint="#4CAF50"
+            android:textStyle="bold"/>
+
+    </LinearLayout>
+</ScrollView>
