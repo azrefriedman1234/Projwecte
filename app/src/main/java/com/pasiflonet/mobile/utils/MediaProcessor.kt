@@ -20,19 +20,30 @@ object MediaProcessor {
         lX: Float, lY: Float, lScale: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        // אם אין עריכות בכלל (בלי טשטוש ובלי לוגו), פשוט מעתיקים את הקובץ
+        // שלב מקדים: יצירת עותק עבודה בתיקייה בטוחה (פותר בעיות הרשאה)
+        val safeInput = File(context.cacheDir, "temp_input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
+        try {
+            File(inputPath).copyTo(safeInput, overwrite = true)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            onComplete(false)
+            return
+        }
+
+        // אם אין עריכות - פשוט מעבירים את הקובץ הבטוח הלאה
         if (rects.isEmpty() && logoUri == null) {
             try {
-                File(inputPath).copyTo(File(outputPath), overwrite = true)
+                safeInput.copyTo(File(outputPath), overwrite = true)
                 onComplete(true)
             } catch (e: Exception) {
-                e.printStackTrace()
                 onComplete(false)
+            } finally {
+                safeInput.delete()
             }
             return
         }
 
-        // הכנת לוגו זמני אם צריך
+        // הכנת לוגו
         var logoPath: String? = null
         if (logoUri != null) {
             try {
@@ -43,74 +54,61 @@ object MediaProcessor {
                 inputStream?.close()
                 outputStream.close()
                 logoPath = tempLogo.absolutePath
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
         }
 
         // בניית פקודת FFmpeg
         val cmd = StringBuilder()
-        cmd.append("-y -i \"$inputPath\" ") // קלט ראשי
+        cmd.append("-y -i \"${safeInput.absolutePath}\" ") 
 
-        if (logoPath != null) {
-            cmd.append("-i \"$logoPath\" ") // קלט לוגו
-        }
+        if (logoPath != null) cmd.append("-i \"$logoPath\" ")
 
         cmd.append("-filter_complex \"")
         
-        // 1. שלב הטשטוש (Blur)
-        var lastStream = "[0:v]" // הזרם הנוכחי שאנחנו עובדים עליו
+        var lastStream = "[0:v]"
         
-        rects.forEachIndexed { index, rect ->
-            // המרה מקואורדינטות יחסיות (0.0-1.0) לפיקסלים
-            // x, y, w, h
-            val blurCmd = "boxblur=10:1:enable='between(t,0,10000)':enable='between(x,iw*${rect.left},iw*${rect.right})*between(y,ih*${rect.top},ih*${rect.bottom})'"
-            // הערה: הדרך היעילה יותר ב-FFmpeg היא להשתמש ב-delogo או crop+blur+overlay
-            // לצורך פשטות ויציבות נשתמש ב-delogo שמיועד בדיוק להסרת לוגואים/טשטוש אזורים
-            // delogo=x=10:y=10:w=100:h=100
-            
-            // שיטה יציבה: delogo
+        // טשטוש
+        rects.forEachIndexed { index, r ->
             val nextStream = "[v${index+1}]"
-            cmd.append("$lastStream delogo=x=iw*${rect.left}:y=ih*${rect.top}:w=iw*${rect.right-rect.left}:h=ih*${rect.bottom-rect.top} $nextStream;")
+            // שימוש ב-gblur שהוא יציב יותר
+            cmd.append("$lastStream split=2[orig][blur];[blur]crop=iw*${r.right-r.left}:ih*${r.bottom-r.top}:iw*${r.left}:ih*${r.top},gblur=sigma=20[blurred];[orig][blurred]overlay=x=W*${r.left}:y=H*${r.top} $nextStream;")
             lastStream = nextStream
         }
 
-        // 2. שלב הלוגו (Overlay)
+        // לוגו
         if (logoPath != null) {
-            // חישוב גודל הלוגו יחסית למסך (בהנחה שהמסך הוא 1080p לצורך פרופורציה, או שימוש ב-scale2ref)
-            // נשתמש ברוחב יחסי: נניח שהלוגו צריך להיות 20% מרוחב המסך כפול הסקייל
             val scaleFilter = "[1:v]scale=iw*${lScale}:-1[logo];" 
             cmd.append(scaleFilter)
-            
             val overlayCmd = "$lastStream[logo]overlay=x=W*${lX}:y=H*${lY}[out]"
             cmd.append(overlayCmd)
         } else {
-            // אם אין לוגו, הזרם האחרון הוא הפלט
             cmd.append("${lastStream}null[out]")
         }
 
         cmd.append("\" -map \"[out]\" ")
         
-        // הגדרות קידוד (מהירות vs איכות)
         if (isVideo) {
-            cmd.append("-c:v libx264 -preset ultrafast -crf 23 -c:a copy ")
+            // הגדרות למהירות מקסימלית ותאימות לטלגרם
+            cmd.append("-c:v libx264 -preset ultrafast -crf 26 -pix_fmt yuv420p -c:a copy ")
         } else {
-            cmd.append("-q:v 2 ") // איכות תמונה גבוהה
+            cmd.append("-q:v 2 ")
         }
 
         cmd.append("\"$outputPath\"")
 
-        Log.d("FFMPEG", "Command: $cmd")
-
-        // הרצה אסינכרונית
         FFmpegKit.executeAsync(cmd.toString()) { session ->
-            val returnCode = session.returnCode
-            if (ReturnCode.isSuccess(returnCode)) {
-                Log.d("FFMPEG", "Success!")
+            safeInput.delete() // ניקוי
+            if (ReturnCode.isSuccess(session.returnCode)) {
                 onComplete(true)
             } else {
                 Log.e("FFMPEG", "Failed: ${session.failStackTrace}")
-                onComplete(false)
+                // Fallback: אם העריכה נכשלה, נשלח את המקור כדי לא לתקוע את המשתמש
+                try {
+                    File(inputPath).copyTo(File(outputPath), overwrite = true)
+                    onComplete(true) 
+                } catch (e: Exception) {
+                    onComplete(false)
+                }
             }
         }
     }

@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import coil.load
+import coil.request.CachePolicy
 import com.pasiflonet.mobile.databinding.ActivityDetailsBinding
 import com.pasiflonet.mobile.td.TdLibManager
 import com.pasiflonet.mobile.utils.DataStoreRepo
@@ -39,26 +40,22 @@ class DetailsActivity : AppCompatActivity() {
             val miniThumb = intent.getByteArrayExtra("MINI_THUMB")
             
             fileId = intent.getIntExtra("FILE_ID", 0)
-            thumbId = intent.getIntExtra("THUMB_ID", 0) // קבלת ה-ID המדויק
-            
+            thumbId = intent.getIntExtra("THUMB_ID", 0)
             isVideo = intent.getBooleanExtra("IS_VIDEO", false)
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
-            // 1. תמיד מציגים מיני-טאבנייל מיד
+            // 1. מיני-טאבנייל (מיידי)
             if (miniThumb != null && miniThumb.isNotEmpty()) {
                 b.ivPreview.load(miniThumb)
                 b.previewContainer.visibility = View.VISIBLE
             }
 
-            // 2. לוגיקה חכמה להחלפה ל-HD
-            if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
-                b.ivPreview.load(File(thumbPath!!))
-                b.previewContainer.visibility = View.VISIBLE
-            } else {
-                // אם הקובץ לא קיים, מפעילים את הנוהל האגרסיבי
-                if (thumbId != 0 && thumbPath != null) {
-                    Toast.makeText(this, "Fetching Sharp Image...", Toast.LENGTH_SHORT).show()
+            // 2. בדיקה והורדה של HD
+            if (thumbPath != null) {
+                if (File(thumbPath!!).exists() && File(thumbPath!!).length() > 0) {
+                    loadSharpImage(thumbPath!!)
+                } else if (thumbId != 0) {
                     forceDownloadAndShow(thumbId, thumbPath!!)
                 }
             }
@@ -69,22 +66,25 @@ class DetailsActivity : AppCompatActivity() {
         } catch (e: Exception) { Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show() }
     }
 
-    // פונקציה אגרסיבית שרצה ברקע ולוחצת על "הורד" עד שהקובץ מופיע
+    private fun loadSharpImage(path: String) {
+        // שימוש בפרמטרים שמבטלים Cache כדי להכריח טעינה מהקובץ החדש
+        b.ivPreview.load(File(path)) {
+            memoryCachePolicy(CachePolicy.DISABLED)
+            diskCachePolicy(CachePolicy.DISABLED)
+        }
+        b.previewContainer.visibility = View.VISIBLE
+    }
+
     private fun forceDownloadAndShow(id: Int, path: String) {
         lifecycleScope.launch {
             var attempts = 0
-            // מנסים במשך 30 שניות (60 נסיונות)
-            while (attempts < 60) {
-                // אם הקובץ הופיע - טוענים ויוצאים
-                if (File(path).exists()) {
-                    b.ivPreview.load(File(path))
+            while (attempts < 60) { // 30 שניות
+                if (File(path).exists() && File(path).length() > 0) {
+                    loadSharpImage(path)
                     break
                 }
-                
-                // אם הקובץ לא שם - שולחים שוב פקודת הורדה ליתר ביטחון
-                TdLibManager.downloadFile(id)
-                
-                delay(500) // מחכים חצי שנייה
+                TdLibManager.downloadFile(id) // נדנוד לשרת
+                delay(500)
                 attempts++
             }
         }
@@ -93,52 +93,33 @@ class DetailsActivity : AppCompatActivity() {
     private fun setupMediaToggle() {
         b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
-                b.vDisabledOverlay.visibility = View.GONE
-                b.tvTextOnlyLabel.visibility = View.GONE
-                b.mediaToolsContainer.alpha = 1.0f
-                enableMediaTools(true)
+                b.vDisabledOverlay.visibility = View.GONE; b.tvTextOnlyLabel.visibility = View.GONE; b.mediaToolsContainer.alpha = 1.0f; enableMediaTools(true)
             } else {
-                b.vDisabledOverlay.visibility = View.VISIBLE
-                b.tvTextOnlyLabel.visibility = View.VISIBLE
-                b.mediaToolsContainer.alpha = 0.3f
-                enableMediaTools(false)
+                b.vDisabledOverlay.visibility = View.VISIBLE; b.tvTextOnlyLabel.visibility = View.VISIBLE; b.mediaToolsContainer.alpha = 0.3f; enableMediaTools(false)
             }
         }
     }
     
     private fun enableMediaTools(enable: Boolean) {
-        b.btnModeBlur.isEnabled = enable
-        b.btnModeLogo.isEnabled = enable
-        b.sbLogoSize.isEnabled = enable
-        if (!enable) {
-            b.drawingView.visibility = View.GONE
-            b.ivDraggableLogo.visibility = View.GONE
-            b.drawingView.isBlurMode = false
-        }
+        b.btnModeBlur.isEnabled = enable; b.btnModeLogo.isEnabled = enable; b.sbLogoSize.isEnabled = enable
+        if (!enable) { b.drawingView.visibility = View.GONE; b.ivDraggableLogo.visibility = View.GONE; b.drawingView.isBlurMode = false }
     }
 
     private fun disableVisualTools() { b.btnModeBlur.isEnabled = false; b.btnModeLogo.isEnabled = false; b.sbLogoSize.isEnabled = false }
 
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f }
-        
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false
             lifecycleScope.launch {
                 try {
                     val uriStr = DataStoreRepo(this@DetailsActivity).logoUri.first()
                     b.ivDraggableLogo.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f
-                    if (uriStr != null) { 
-                        b.ivDraggableLogo.load(Uri.parse(uriStr))
-                        b.ivDraggableLogo.clearColorFilter()
-                    } else {
-                        b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery)
-                        b.ivDraggableLogo.setColorFilter(Color.WHITE)
-                    }
+                    if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.clearColorFilter() } 
+                    else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
                 } catch (e: Exception) { }
             }
         }
-
         b.ivDraggableLogo.setOnTouchListener { view, event ->
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
             when (event.action) {
@@ -147,13 +128,11 @@ class DetailsActivity : AppCompatActivity() {
             }
             true
         }
-
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { val s = 0.5f + (p/100f); b.ivDraggableLogo.scaleX = s; b.ivDraggableLogo.scaleY = s; logoScale = s }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
-
         b.btnTranslate.setOnClickListener { lifecycleScope.launch { val t = b.etCaption.text.toString(); if (t.isNotEmpty()) b.etCaption.setText(TranslationManager.translateToHebrew(t)) } }
         b.btnSend.setOnClickListener { sendData() }
         b.btnCancel.setOnClickListener { finish() }
