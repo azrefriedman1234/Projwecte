@@ -1,6 +1,8 @@
 package com.pasiflonet.mobile.utils
 
 import android.content.Context
+import android.graphics.BitmapFactory
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -22,6 +24,27 @@ object MediaProcessor {
 
     private fun fmt(value: Float): String {
         return String.format(Locale.US, "%.4f", value)
+    }
+
+    // פונקציה חדשה: מודדת את רוחב וגובה הקובץ לפני העריכה
+    private fun getDimensions(path: String, isVideo: Boolean): Pair<Int, Int> {
+        return try {
+            if (isVideo) {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(path)
+                val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt() ?: 0
+                val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt() ?: 0
+                retriever.release()
+                Pair(w, h)
+            } else {
+                val options = BitmapFactory.Options()
+                options.inJustDecodeBounds = true
+                BitmapFactory.decodeFile(path, options)
+                Pair(options.outWidth, options.outHeight)
+            }
+        } catch (e: Exception) {
+            Pair(0, 0) // במקרה חירום נחזור לשיטה הישנה
+        }
     }
 
     fun processContent(
@@ -65,6 +88,10 @@ object MediaProcessor {
             } catch (e: Exception) { }
         }
 
+        // 1. השגת מידות מדויקות
+        val (width, height) = getDimensions(safeInput.absolutePath, isVideo)
+        val useMath = (width == 0 || height == 0) // אם נכשלנו במדידה, נשתמש בשיטה הישנה
+
         val args = mutableListOf<String>()
         args.add("-y")
         args.add("-i"); args.add(safeInput.absolutePath)
@@ -79,14 +106,28 @@ object MediaProcessor {
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             
-            // שימוש ב-trunc() כדי למנוע שגיאות של חצאי פיקסלים (למשל 100.5 פיקסלים)
-            val w = "trunc(iw*${fmt(r.right-r.left)})"
-            val h = "trunc(ih*${fmt(r.bottom-r.top)})"
-            val x = "trunc(iw*${fmt(r.left)})"
-            val y = "trunc(ih*${fmt(r.top)})"
+            val cropCmd = if (useMath) {
+                // שיטה ישנה (גיבוי)
+                val w = "trunc(iw*${fmt(r.right-r.left)})"
+                val h = "trunc(ih*${fmt(r.bottom-r.top)})"
+                val x = "trunc(iw*${fmt(r.left)})"
+                val y = "trunc(ih*${fmt(r.top)})"
+                "crop=$w:$h:$x:$y"
+            } else {
+                // שיטה חדשה: מספרים קבועים ושלמים (בטוח ב-100%)
+                var pixelW = (width * (r.right - r.left)).toInt()
+                var pixelH = (height * (r.bottom - r.top)).toInt()
+                var pixelX = (width * r.left).toInt()
+                var pixelY = (height * r.top).toInt()
+                
+                // וידוא שהמספרים זוגיים (קריטי לוידאו)
+                if (pixelW % 2 != 0) pixelW--
+                if (pixelH % 2 != 0) pixelH--
+                
+                "crop=$pixelW:$pixelH:$pixelX:$pixelY"
+            }
             
-            // הסרנו את הרווח לפני $nextStream - זה היה גורם לשגיאה!
-            filter.append("$currentStream split=2[main][tocrop];[tocrop]crop=$w:$h:$x:$y,boxblur=10:1[blurred];[main][blurred]overlay=$x:$y$nextStream;")
+            filter.append("$currentStream split=2[main][tocrop];[tocrop]$cropCmd,boxblur=10:1[blurred];[main][blurred]overlay=${if(useMath) "trunc(iw*${fmt(r.left)})" else (width*r.left).toInt()}:${if(useMath) "trunc(ih*${fmt(r.top)})" else (height*r.top).toInt()}$nextStream;")
             currentStream = nextStream
         }
 
@@ -95,11 +136,11 @@ object MediaProcessor {
             val lx = fmt(lX)
             val ly = fmt(lY)
             
-            // גם כאן, הסרת רווחים ושימוש ב-trunc למיקומים
+            // המרה למספרים שלמים גם בלוגו
             filter.append("[1:v]scale=trunc(iw*$s):-1[logo];")
             filter.append("$currentStream[logo]overlay=x=trunc(W*$lx):y=trunc(H*$ly)[v_done]")
         } else {
-            filter.append("${currentStream}scale=trunc(iw):trunc(ih)[v_done]")
+            filter.append("${currentStream}scale=iw:ih[v_done]")
         }
 
         args.add("-filter_complex"); args.add(filter.toString())
