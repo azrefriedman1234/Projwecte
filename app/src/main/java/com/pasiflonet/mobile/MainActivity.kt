@@ -19,6 +19,7 @@ import com.pasiflonet.mobile.utils.DataStoreRepo
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
+import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private lateinit var b: ActivityMainBinding
@@ -33,7 +34,6 @@ class MainActivity : AppCompatActivity() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
 
-        // 1. הסתרה אגרסיבית של הכל בהתחלה
         b.apiContainer.visibility = View.GONE
         b.loginContainer.visibility = View.GONE
         b.mainContent.visibility = View.GONE
@@ -44,7 +44,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupUI() {
-        // כפתורי לוגין
         b.btnSaveApi.setOnClickListener {
             val id = b.etApiId.text.toString().toIntOrNull()
             val hash = b.etApiHash.text.toString()
@@ -59,20 +58,22 @@ class MainActivity : AppCompatActivity() {
         b.btnVerify.setOnClickListener { TdLibManager.sendCode(b.etCode.text.toString()) }
         b.btnVerifyPassword.setOnClickListener { TdLibManager.sendPassword(b.etPassword.text.toString()) }
 
-        // טבלה
         adapter = ChatAdapter(emptyList()) { msg ->
-            val intent = Intent(this, DetailsActivity::class.java)
+            // לוגיקה חדשה: בדיקה לפני פתיחת מסך פרטים
             var thumbPath: String? = null
             var fullId = 0
             var isVideo = false
             var caption = ""
+            var hasMedia = false
 
             when (msg.content) {
                 is TdApi.MessagePhoto -> {
                     val c = msg.content as TdApi.MessagePhoto
-                    thumbPath = c.photo.sizes.firstOrNull()?.photo?.local?.path
+                    thumbPath = c.photo.sizes.lastOrNull()?.photo?.local?.path // מנסים לקחת את הגדול ביותר
+                    if (thumbPath.isNullOrEmpty()) thumbPath = c.photo.sizes.firstOrNull()?.photo?.local?.path // אם אין, את הקטן
                     fullId = if (c.photo.sizes.isNotEmpty()) c.photo.sizes.last().photo.id else 0
                     caption = c.caption.text
+                    hasMedia = true
                 }
                 is TdApi.MessageVideo -> {
                     val c = msg.content as TdApi.MessageVideo
@@ -80,9 +81,25 @@ class MainActivity : AppCompatActivity() {
                     fullId = c.video.video.id
                     isVideo = true
                     caption = c.caption.text
+                    hasMedia = true
                 }
                 is TdApi.MessageText -> caption = (msg.content as TdApi.MessageText).text.text
             }
+
+            // אם זו הודעת טקסט או שהקובץ לא ירד עדיין
+            if (!hasMedia) {
+                Toast.makeText(this, "This is a text message (No media)", Toast.LENGTH_SHORT).show()
+                return@ChatAdapter
+            }
+
+            // אם הנתיב ריק, סימן שהקובץ עוד לא ירד
+            if (thumbPath.isNullOrEmpty() || !File(thumbPath).exists()) {
+                Toast.makeText(this, "Media downloading... Try again in a second", Toast.LENGTH_SHORT).show()
+                TdLibManager.downloadFile(fullId) // מבקש הורדה דחופה
+                return@ChatAdapter
+            }
+            
+            val intent = Intent(this, DetailsActivity::class.java)
             intent.putExtra("THUMB_PATH", thumbPath)
             intent.putExtra("FILE_ID", fullId)
             intent.putExtra("IS_VIDEO", isVideo)
@@ -108,7 +125,6 @@ class MainActivity : AppCompatActivity() {
                 TdLibManager.init(this@MainActivity, apiId, apiHash)
                 observeAuth()
             } else {
-                // רק אם אין API מוגדר - מציגים מסך API
                 b.apiContainer.visibility = View.VISIBLE
                 b.mainContent.visibility = View.GONE
             }
@@ -119,15 +135,11 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             TdLibManager.authState.collect { state ->
                 runOnUiThread {
-                    // איפוס תצוגה
                     b.apiContainer.visibility = View.GONE
                     b.loginContainer.visibility = View.GONE
                     b.mainContent.visibility = View.GONE
                     
                     when (state) {
-                        is TdApi.AuthorizationStateWaitTdlibParameters -> {
-                            // טעינה... לא מציגים כלום עדיין
-                        }
                         is TdApi.AuthorizationStateWaitPhoneNumber -> {
                             b.loginContainer.visibility = View.VISIBLE
                             b.phoneLayout.visibility = View.VISIBLE
@@ -146,24 +158,19 @@ class MainActivity : AppCompatActivity() {
                             b.loginContainer.visibility = View.VISIBLE
                             b.phoneLayout.visibility = View.GONE
                             b.codeLayout.visibility = View.GONE
-                            b.passwordLayout.visibility = View.VISIBLE // תצוגת סיסמה
+                            b.passwordLayout.visibility = View.VISIBLE
                             b.tvLoginStatus.text = "Two-Step Verification"
                         }
                         is TdApi.AuthorizationStateReady -> {
-                            // רק עכשיו מותר להציג את התוכן הראשי!
                             b.mainContent.visibility = View.VISIBLE
                             b.tvConnectionStatus.text = "🟢 Online"
                             b.tvConnectionStatus.setTextColor(0xFF4CAF50.toInt())
-                        }
-                        else -> {
-                            // מצבי ביניים (logging out, closing, etc)
                         }
                     }
                 }
             }
         }
         
-        // האזנה להודעות
         lifecycleScope.launch {
             TdLibManager.currentMessages.collect { msgs ->
                 runOnUiThread { adapter.updateList(msgs) }
