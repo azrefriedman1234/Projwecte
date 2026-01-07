@@ -54,45 +54,63 @@ class MainActivity : AppCompatActivity() {
             var fullId = 0
             var isVideo = false
             var caption = ""
-            var downloadId = 0
+            
+            // רשימת הורדות לביצוע
+            val downloads = mutableListOf<Int>()
 
             when (msg.content) {
                 is TdApi.MessagePhoto -> {
                     val c = msg.content as TdApi.MessagePhoto
-                    // 1. תמיד לוקחים את המיני-טאבנייל לגיבוי מיידי
                     miniThumbData = c.photo.minithumbnail?.data
                     
-                    // 2. חיפוש הנתיב האיכותי ביותר
-                    val big = c.photo.sizes.lastOrNull()
-                    if (big != null) {
-                        thumbPath = big.photo.local.path
-                        if (!File(thumbPath).exists()) downloadId = big.photo.id
+                    // --- השינוי הקריטי: חיפוש תמונה בינונית (m) ---
+                    // תמונות מסוג 'm' הן בגודל 320px - חדות מספיק לטלפון ויורדות מיד
+                    val mediumPhoto = c.photo.sizes.find { it.type == "m" } ?: c.photo.sizes.firstOrNull()
+                    val hugePhoto = c.photo.sizes.lastOrNull() // המקור
+
+                    if (mediumPhoto != null) {
+                        thumbPath = mediumPhoto.photo.local.path
+                        // אם אין את הקובץ בדיסק - מורידים אותו ספציפית!
+                        if (!File(thumbPath).exists()) {
+                            downloads.add(mediumPhoto.photo.id)
+                        }
+                    }
+
+                    // תמיד מורידים גם את הענק ברקע (בשביל השליחה האיכותית אח"כ)
+                    if (hugePhoto != null) {
+                        fullId = hugePhoto.photo.id
+                        downloads.add(fullId)
                     }
                     
-                    fullId = if (c.photo.sizes.isNotEmpty()) c.photo.sizes.last().photo.id else 0
                     caption = c.caption.text
                 }
                 is TdApi.MessageVideo -> {
                     val c = msg.content as TdApi.MessageVideo
                     miniThumbData = c.video.minithumbnail?.data
+                    
+                    // בוידאו ה-Thumbnail הוא נפרד
                     val thumb = c.video.thumbnail
                     if (thumb != null) {
                         thumbPath = thumb.file.local.path
-                        if (!File(thumbPath).exists()) downloadId = thumb.file.id
+                        if (!File(thumbPath).exists()) {
+                            downloads.add(thumb.file.id)
+                        }
                     }
+                    
                     fullId = c.video.video.id
+                    downloads.add(fullId)
                     isVideo = true
                     caption = c.caption.text
                 }
                 is TdApi.MessageText -> caption = (msg.content as TdApi.MessageText).text.text
             }
 
-            if (downloadId != 0) TdLibManager.downloadFile(downloadId)
-            if (fullId != 0) TdLibManager.downloadFile(fullId)
+            // ביצוע כל ההורדות הנדרשות (גם טאבנייל וגם מקור)
+            downloads.forEach { TdLibManager.downloadFile(it) }
             
             val intent = Intent(this, DetailsActivity::class.java)
             if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
-            if (miniThumbData != null) intent.putExtra("MINI_THUMB", miniThumbData) // חובה!
+            if (miniThumbData != null) intent.putExtra("MINI_THUMB", miniThumbData)
             
             intent.putExtra("FILE_ID", fullId)
             intent.putExtra("IS_VIDEO", isVideo)
