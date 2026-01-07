@@ -52,6 +52,7 @@ class MainActivity : AppCompatActivity() {
 
         adapter = ChatAdapter(emptyList()) { msg ->
             var thumbPath: String? = null
+            var miniThumbData: ByteArray? = null // התיקון: משתנה לשמירת המידע הבינארי של התמונה
             var fullId = 0
             var isVideo = false
             var caption = ""
@@ -60,12 +61,18 @@ class MainActivity : AppCompatActivity() {
                 is TdApi.MessagePhoto -> {
                     val c = msg.content as TdApi.MessagePhoto
                     thumbPath = c.photo.sizes.firstOrNull()?.photo?.local?.path
+                    // שליפת ה-Mini Thumbnail אם קיים
+                    miniThumbData = c.photo.minithumbnail?.data
+                    
                     fullId = if (c.photo.sizes.isNotEmpty()) c.photo.sizes.last().photo.id else 0
                     caption = c.caption.text
                 }
                 is TdApi.MessageVideo -> {
                     val c = msg.content as TdApi.MessageVideo
                     thumbPath = c.video.thumbnail?.file?.local?.path
+                    // שליפת ה-Mini Thumbnail מוידאו
+                    miniThumbData = c.video.minithumbnail?.data
+                    
                     fullId = c.video.video.id
                     isVideo = true
                     caption = c.caption.text
@@ -74,8 +81,11 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (fullId != 0) TdLibManager.downloadFile(fullId)
+            
             val intent = Intent(this, DetailsActivity::class.java)
             if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
+            if (miniThumbData != null) intent.putExtra("MINI_THUMB", miniThumbData) // העברת המידע
+            
             intent.putExtra("FILE_ID", fullId)
             intent.putExtra("IS_VIDEO", isVideo)
             intent.putExtra("CAPTION", caption)
@@ -84,18 +94,10 @@ class MainActivity : AppCompatActivity() {
         
         b.rvMessages.layoutManager = LinearLayoutManager(this)
         b.rvMessages.adapter = adapter
-        
-        // חיבור כפתור המטאטא ללוגיקת הניקוי
-        b.btnClearCache.setOnClickListener { 
-            lifecycleScope.launch { 
-                CacheManager.clearAppCache(this@MainActivity) 
-            }
-        }
-        
+        b.btnClearCache.setOnClickListener { lifecycleScope.launch { CacheManager.clearAppCache(this@MainActivity) } }
         b.btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
     }
     
-    // (יתר הפונקציות ללא שינוי, אבל נדרשות לקומפילציה)
     private fun checkApiAndInit() { lifecycleScope.launch { val r=DataStoreRepo(this@MainActivity); val i=r.apiId.first(); val h=r.apiHash.first(); if(i!=null&&h!=null){ b.apiContainer.visibility=View.GONE; TdLibManager.init(this@MainActivity,i,h); observeAuth() } else { b.apiContainer.visibility=View.VISIBLE; b.mainContent.visibility=View.GONE } } }
     private fun observeAuth() { lifecycleScope.launch { TdLibManager.authState.collect { s -> runOnUiThread { if(s is TdApi.AuthorizationStateWaitPhoneNumber){ b.apiContainer.visibility=View.GONE; b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.GONE; b.btnSendCode.isEnabled=true; b.btnSendCode.text="SEND CODE" } else if(s is TdApi.AuthorizationStateWaitCode){ b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.GONE; b.codeLayout.visibility=View.VISIBLE } else if(s is TdApi.AuthorizationStateWaitPassword){ b.loginContainer.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.VISIBLE } else if(s is TdApi.AuthorizationStateReady){ b.loginContainer.visibility=View.GONE; b.mainContent.visibility=View.VISIBLE } } } }; lifecycleScope.launch { TdLibManager.currentMessages.collect { m -> runOnUiThread { adapter.updateList(m) } } } }
     private fun checkPermissions() { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)) else requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE)) }

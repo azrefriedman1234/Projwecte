@@ -28,33 +28,39 @@ class DetailsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // הודעת דיבוג: אם רואים אותה, סימן שהמסך נפתח!
-        Toast.makeText(this, "Loaded Details Screen", Toast.LENGTH_SHORT).show()
-
         try {
             b = ActivityDetailsBinding.inflate(layoutInflater)
             setContentView(b.root)
         } catch (e: Exception) {
-            // אם העיצוב קורס, מציגים שגיאה ולא סוגרים
             Toast.makeText(this, "Layout Error: ${e.message}", Toast.LENGTH_LONG).show()
             e.printStackTrace()
-            return // עוצרים כאן כדי לא לקרוס בהמשך
+            return
         }
 
         try {
             thumbPath = intent.getStringExtra("THUMB_PATH")
+            val miniThumbData = intent.getByteArrayExtra("MINI_THUMB") // קבלת ה-Mini Thumb
+            
             fileId = intent.getIntExtra("FILE_ID", 0)
             isVideo = intent.getBooleanExtra("IS_VIDEO", false)
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
+            // לוגיקה חכמה לתצוגה:
+            // 1. אם יש קובץ פיזי - מציגים אותו (הכי איכותי)
             if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
                 b.ivPreview.load(File(thumbPath!!))
                 b.previewContainer.visibility = View.VISIBLE
-            } else if (fileId != 0) {
+            } 
+            // 2. אם אין קובץ, אבל יש Mini Thumb בזיכרון - מציגים אותו (מיידי!)
+            else if (miniThumbData != null && miniThumbData.isNotEmpty()) {
+                b.ivPreview.load(miniThumbData) // Coil יודע לטעון ByteArray
+                b.previewContainer.visibility = View.VISIBLE
+            }
+            // 3. אם אין כלום - מציגים טעינה
+            else if (fileId != 0) {
                  b.previewContainer.visibility = View.VISIBLE
-                 Toast.makeText(this, "Loading Media...", Toast.LENGTH_SHORT).show()
+                 Toast.makeText(this, "Loading Preview...", Toast.LENGTH_SHORT).show()
             } else {
                 b.previewContainer.visibility = View.INVISIBLE
                 disableVisualTools()
@@ -73,7 +79,6 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun setupTools() {
-        // Blur Mode
         b.btnModeBlur.setOnClickListener { 
             b.drawingView.isBlurMode = true
             b.drawingView.visibility = View.VISIBLE
@@ -81,7 +86,6 @@ class DetailsActivity : AppCompatActivity() {
             Toast.makeText(this, "Blur Mode ON", Toast.LENGTH_SHORT).show()
         }
         
-        // Logo Mode
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false
             lifecycleScope.launch {
@@ -94,7 +98,6 @@ class DetailsActivity : AppCompatActivity() {
             }
         }
 
-        // Draggable Logo Logic
         b.ivDraggableLogo.setOnTouchListener { view, event ->
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
             when (event.action) {
@@ -109,7 +112,6 @@ class DetailsActivity : AppCompatActivity() {
             true
         }
 
-        // Slider
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { 
                 val s = 0.5f + (p/100f)
@@ -121,7 +123,6 @@ class DetailsActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
 
-        // Translate
         b.btnTranslate.setOnClickListener { 
             lifecycleScope.launch { 
                 val t = b.etCaption.text.toString()
@@ -129,7 +130,6 @@ class DetailsActivity : AppCompatActivity() {
             } 
         }
         
-        // Send
         b.btnSend.setOnClickListener { sendData() }
         b.btnCancel.setOnClickListener { finish() }
     }
