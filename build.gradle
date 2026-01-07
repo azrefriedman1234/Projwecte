@@ -10,7 +10,6 @@ buildscript {
     }
 }
 
-// זה הבלוק הקריטי - הוא מכריח את כל המודולים לחפש במקומות הנכונים
 allprojects {
     repositories {
         google()
