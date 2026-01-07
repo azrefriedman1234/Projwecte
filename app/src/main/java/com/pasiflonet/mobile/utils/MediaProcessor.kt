@@ -39,7 +39,7 @@ object MediaProcessor {
             return
         }
 
-        // אם אין שום עריכה (רק טקסט או תמונה נקייה) - מעבירים הלאה
+        // אם אין עריכה - מעבירים הלאה
         if (rects.isEmpty() && logoUri == null) {
             try {
                 safeInput.copyTo(File(outputPath), overwrite = true)
@@ -61,15 +61,19 @@ object MediaProcessor {
             } catch (e: Exception) { e.printStackTrace() }
         }
 
-        val cmd = StringBuilder()
-        cmd.append("-y -i \"${safeInput.absolutePath}\" ")
-        if (logoPath != null) cmd.append("-i \"$logoPath\" ")
-
-        cmd.append("-filter_complex \"")
+        // --- הבנייה החדשה והבטוחה (רשימת ארגומנטים) ---
+        val args = mutableListOf<String>()
+        args.add("-y")
+        args.add("-i"); args.add(safeInput.absolutePath)
         
+        if (logoPath != null) {
+            args.add("-i"); args.add(logoPath)
+        }
+
+        // בניית מחרוזת הפילטרים (בלי גרשיים מסביב - המערכת תוסיף לבד)
+        val filter = StringBuilder()
         var currentStream = "[0:v]"
         
-        // שימוש בפילטרים
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             val w = "iw*${r.right-r.left}"
@@ -77,43 +81,48 @@ object MediaProcessor {
             val x = "iw*${r.left}"
             val y = "ih*${r.top}"
             
-            cmd.append("$currentStream split=2[main][tocrop];[tocrop]crop=$w:$h:$x:$y,boxblur=10:1[blurred];[main][blurred]overlay=$x:$y $nextStream;")
+            // שרשור פילטרים עם נקודה-פסיק
+            filter.append("$currentStream split=2[main][tocrop];[tocrop]crop=$w:$h:$x:$y,boxblur=10:1[blurred];[main][blurred]overlay=$x:$y $nextStream;")
             currentStream = nextStream
         }
 
+        // הוספת לוגו או סיום שרשרת
         if (logoPath != null) {
-            cmd.append("[1:v]scale=iw*${lScale}:-1[logo];")
-            cmd.append("$currentStream[logo]overlay=x=W*${lX}:y=H*${lY}[out]")
+            filter.append("[1:v]scale=iw*${lScale}:-1[logo];")
+            filter.append("$currentStream[logo]overlay=x=W*${lX}:y=H*${lY}[final]")
         } else {
-            cmd.append("${currentStream}null[out]")
+            // שימוש ב-scale כפילטר "דמי" במקום null כדי למנוע בעיות תאימות
+            filter.append("${currentStream}scale=iw:ih[final]")
         }
 
-        cmd.append("\" -map \"[out]\" ")
+        args.add("-filter_complex"); args.add(filter.toString())
+        args.add("-map"); args.add("[final]")
         
+        // הגדרות קידוד
         if (isVideo) {
-            cmd.append("-c:v libx264 -preset ultrafast -crf 28 -c:a copy ")
+            args.add("-c:v"); args.add("libx264")
+            args.add("-preset"); args.add("ultrafast")
+            args.add("-crf"); args.add("28")
+            args.add("-c:a"); args.add("copy")
         } else {
-            cmd.append("-q:v 5 ")
+            args.add("-q:v"); args.add("5")
         }
 
-        cmd.append("\"$outputPath\"")
+        args.add(outputPath)
 
-        FFmpegKit.executeAsync(cmd.toString()) { session ->
+        // שימוש בפקודה הבטוחה: executeWithArgumentsAsync
+        FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
             
             if (ReturnCode.isSuccess(session.returnCode)) {
-                // הצלחה! הקובץ הערוך מוכן
                 onComplete(true)
             } else {
-                // כישלון! עוצרים הכל ומדווחים
                 val logs = session.allLogsAsString
-                val errorMsg = if (logs.length > 100) logs.takeLast(100) else logs
+                val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
                 
-                showToast(context, "❌ Edit Failed! Nothing sent.\nError: $errorMsg")
+                showToast(context, "❌ Edit Failed!\n$errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
-                
-                // החזרת false תגרום ל-TdLibManager לא לשלוח כלום
-                onComplete(false) 
+                onComplete(false)
             }
         }
     }
