@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
 import com.pasiflonet.mobile.databinding.ActivityMainBinding
 import com.pasiflonet.mobile.td.TdLibManager
 import com.pasiflonet.mobile.utils.DataStoreRepo
@@ -21,11 +20,6 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        setupButtons()
-        checkApiAndInit()
-    }
-
-    private fun setupButtons() {
         binding.btnSaveApi.setOnClickListener {
             val id = binding.etApiId.text.toString().toIntOrNull()
             val hash = binding.etApiHash.text.toString()
@@ -36,9 +30,21 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        
-        binding.btnSendCode.setOnClickListener { TdLibManager.sendPhone(binding.etPhone.text.toString()) }
-        binding.btnVerify.setOnClickListener { TdLibManager.sendCode(binding.etCode.text.toString()) }
+
+        binding.btnSendCode.setOnClickListener {
+            val phone = binding.etPhone.text.toString()
+            if (phone.isNotEmpty()) {
+                TdLibManager.sendPhone(phone)
+                binding.tvStatus.text = "Sending request for $phone..."
+            }
+        }
+
+        binding.btnVerify.setOnClickListener {
+            val code = binding.etCode.text.toString()
+            if (code.isNotEmpty()) TdLibManager.sendCode(code)
+        }
+
+        checkApiAndInit()
     }
 
     private fun checkApiAndInit() {
@@ -59,35 +65,42 @@ class MainActivity : AppCompatActivity() {
     private fun observeAuthState() {
         lifecycleScope.launch {
             TdLibManager.authState.collect { state ->
-                runOnUiThread { handleAuthState(state) }
+                runOnUiThread {
+                    if (state != null) {
+                        handleAuthState(state)
+                    }
+                }
             }
         }
     }
 
-    private fun handleAuthState(state: TdApi.AuthorizationState?) {
+    private fun handleAuthState(state: TdApi.AuthorizationState) {
+        // הצגת הסטטוס הנוכחי לניפוי שגיאות (Debug)
+        binding.tvStatus.text = "Current State: ${state.javaClass.simpleName}"
+
         when (state) {
             is TdApi.AuthorizationStateWaitPhoneNumber -> {
                 binding.loginContainer.visibility = View.VISIBLE
-                binding.etPhone.visibility = View.VISIBLE
-                binding.btnSendCode.visibility = View.VISIBLE
-                binding.etCode.visibility = View.GONE
-                binding.btnVerify.visibility = View.GONE
-                binding.tvStatus.text = "Enter your phone number"
+                binding.phoneLayout.visibility = View.VISIBLE
+                binding.codeLayout.visibility = View.GONE
             }
             is TdApi.AuthorizationStateWaitCode -> {
-                // כאן אנחנו חושפים את השדה של הקוד
                 binding.loginContainer.visibility = View.VISIBLE
-                binding.etPhone.visibility = View.GONE
-                binding.btnSendCode.visibility = View.GONE
-                binding.etCode.visibility = View.VISIBLE
-                binding.btnVerify.visibility = View.VISIBLE
-                binding.tvStatus.text = "Enter the code sent to your Telegram"
+                binding.phoneLayout.visibility = View.GONE
+                binding.codeLayout.visibility = View.VISIBLE
+                binding.tvStatus.text = "Code Sent! Check your Telegram app."
             }
             is TdApi.AuthorizationStateReady -> {
                 binding.loginContainer.visibility = View.GONE
                 binding.rvChats.visibility = View.VISIBLE
                 binding.btnSettings.visibility = View.VISIBLE
-                // מעבר למסך הגדרות או טעינת צ'אטים...
+                binding.tvStatus.text = "Logged In Successfully"
+            }
+            is TdApi.AuthorizationStateLoggingOut -> {
+                binding.tvStatus.text = "Logging out..."
+            }
+            is TdApi.AuthorizationStateClosed -> {
+                binding.tvStatus.text = "Connection Closed"
             }
         }
     }
