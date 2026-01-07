@@ -16,14 +16,8 @@ object TdLibManager {
     private val _authState = MutableStateFlow<TdApi.AuthorizationState?>(null)
     val authState: StateFlow<TdApi.AuthorizationState?> = _authState
 
-    private val _chatList = MutableStateFlow<List<TdApi.Chat>>(emptyList())
-    val chatList: StateFlow<List<TdApi.Chat>> = _chatList
-
     private val _currentMessages = MutableStateFlow<List<TdApi.Message>>(emptyList())
     val currentMessages: StateFlow<List<TdApi.Message>> = _currentMessages
-
-    private val chatsMap = ConcurrentHashMap<Long, TdApi.Chat>()
-    private val chatPositions = ConcurrentHashMap<Long, Long>()
 
     fun init(context: Context, apiId: Int, apiHash: String) {
         if (client != null) return
@@ -46,33 +40,14 @@ object TdLibManager {
                         client?.send(params, null)
                     }
                     is TdApi.AuthorizationStateReady -> {
-                        // התיקון הקריטי: בקשת טעינת צ'אטים מההיסטוריה ברגע שמתחברים
                         client?.send(TdApi.LoadChats(null, 20), null)
                     }
                 }
             }
-            is TdApi.UpdateNewChat -> {
-                chatsMap[update.chat.id] = update.chat
-                refreshChatList()
-            }
-            is TdApi.UpdateChatPosition -> {
-                if (update.position.list is TdApi.ChatListMain) {
-                    chatPositions[update.chatId] = update.position.order
-                    refreshChatList()
-                }
-            }
-            is TdApi.UpdateChatLastMessage -> {
-                chatsMap[update.chatId]?.let {
-                    it.lastMessage = update.lastMessage
-                    refreshChatList()
-                }
-            }
             is TdApi.UpdateNewMessage -> {
                 val current = _currentMessages.value.toMutableList()
-                if (current.isNotEmpty() && current.first().chatId == update.message.chatId) {
-                    current.add(0, update.message)
-                    _currentMessages.value = current
-                }
+                current.add(0, update.message)
+                _currentMessages.value = current
             }
             is TdApi.UpdateFile -> {
                 if (update.file.local.isDownloadingCompleted) {
@@ -82,29 +57,13 @@ object TdLibManager {
         }
     }
 
-    private fun refreshChatList() {
-        val sorted = chatsMap.values
-            .filter { chatPositions.containsKey(it.id) }
-            .sortedByDescending { chatPositions[it.id] }
-        _chatList.value = sorted
-    }
-
+    // פונקציות אימות
     fun sendPhone(phone: String) = client?.send(TdApi.SetAuthenticationPhoneNumber(phone, null), null)
     fun sendCode(code: String) = client?.send(TdApi.CheckAuthenticationCode(code), null)
-    
-    fun loadChatHistory(chatId: Long) {
-        _currentMessages.value = emptyList()
-        client?.send(TdApi.GetChatHistory(chatId, 0, 0, 50, false)) { res ->
-            if (res is TdApi.Messages) {
-                _currentMessages.value = res.messages.toList()
-            }
-        }
-    }
-    
-    fun downloadFile(fileId: Int) {
-         client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
-    }
+    fun sendPassword(password: String) = client?.send(TdApi.CheckAuthenticationPassword(password), null) // חדש!
 
+    fun downloadFile(fileId: Int) = client?.send(TdApi.DownloadFile(fileId, 32, 0, 0, false), null)
+    
     fun sendFinalMessage(username: String, text: String, filePath: String?, isVideo: Boolean) {
         client?.send(TdApi.SearchPublicChat(username.replace("@", ""))) { obj ->
             if (obj is TdApi.Chat) {
