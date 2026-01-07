@@ -42,9 +42,40 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        b.btnSendCode.setOnClickListener { TdLibManager.sendPhone(b.etPhone.text.toString()) }
-        b.btnVerify.setOnClickListener { TdLibManager.sendCode(b.etCode.text.toString()) }
-        b.btnVerifyPassword.setOnClickListener { TdLibManager.sendPassword(b.etPassword.text.toString()) }
+
+        // כפתור שליחת טלפון - עם טיפול בשגיאות
+        b.btnSendCode.setOnClickListener {
+            val phone = b.etPhone.text.toString()
+            if (phone.isEmpty()) { Toast.makeText(this, "Enter phone number", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
+            
+            b.btnSendCode.isEnabled = false
+            b.btnSendCode.text = "Sending..."
+            
+            TdLibManager.sendPhone(phone) { errorMsg ->
+                runOnUiThread {
+                    b.btnSendCode.isEnabled = true
+                    b.btnSendCode.text = "SEND CODE"
+                    Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show() // הצגת השגיאה!
+                }
+            }
+        }
+
+        // כפתור אימות קוד - עם טיפול בשגיאות
+        b.btnVerify.setOnClickListener { 
+            val code = b.etCode.text.toString()
+            if (code.isEmpty()) return@setOnClickListener
+            
+            TdLibManager.sendCode(code) { errorMsg ->
+                runOnUiThread { Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show() }
+            }
+        }
+
+        b.btnVerifyPassword.setOnClickListener { 
+             val pass = b.etPassword.text.toString()
+             TdLibManager.sendPassword(pass) { errorMsg ->
+                runOnUiThread { Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show() }
+            }
+        }
 
         adapter = ChatAdapter(emptyList()) { msg ->
             var thumbPath: String? = null
@@ -69,12 +100,8 @@ class MainActivity : AppCompatActivity() {
                 is TdApi.MessageText -> caption = (msg.content as TdApi.MessageText).text.text
             }
 
-            // הפעלת הורדה ברקע, אבל בלי לעצור את המשתמש!
-            if (fullId != 0) {
-                TdLibManager.downloadFile(fullId)
-            }
+            if (fullId != 0) TdLibManager.downloadFile(fullId)
             
-            // פתיחה מיידית - בלי תנאים!
             val intent = Intent(this, DetailsActivity::class.java)
             if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
             intent.putExtra("FILE_ID", fullId)
@@ -106,12 +133,31 @@ class MainActivity : AppCompatActivity() {
          lifecycleScope.launch {
             TdLibManager.authState.collect { state ->
                 runOnUiThread {
-                    b.apiContainer.visibility = View.GONE; b.loginContainer.visibility = View.GONE; b.mainContent.visibility = View.GONE
-                    when (state) {
-                        is TdApi.AuthorizationStateWaitPhoneNumber -> { b.loginContainer.visibility = View.VISIBLE; b.phoneLayout.visibility = View.VISIBLE; b.codeLayout.visibility = View.GONE; b.passwordLayout.visibility = View.GONE; b.tvLoginStatus.text = "Phone" }
-                        is TdApi.AuthorizationStateWaitCode -> { b.loginContainer.visibility = View.VISIBLE; b.phoneLayout.visibility = View.GONE; b.codeLayout.visibility = View.VISIBLE; b.passwordLayout.visibility = View.GONE; b.tvLoginStatus.text = "Code" }
-                        is TdApi.AuthorizationStateWaitPassword -> { b.loginContainer.visibility = View.VISIBLE; b.phoneLayout.visibility = View.GONE; b.codeLayout.visibility = View.GONE; b.passwordLayout.visibility = View.VISIBLE; b.tvLoginStatus.text = "2FA Password" }
-                        is TdApi.AuthorizationStateReady -> { b.mainContent.visibility = View.VISIBLE; b.tvConnectionStatus.text = "🟢 Online"; b.tvConnectionStatus.setTextColor(0xFF4CAF50.toInt()) }
+                    // עדכון ה-UI לפי המצב הנוכחי
+                    if (state is TdApi.AuthorizationStateWaitPhoneNumber) {
+                        b.apiContainer.visibility = View.GONE
+                        b.loginContainer.visibility = View.VISIBLE
+                        b.phoneLayout.visibility = View.VISIBLE
+                        b.codeLayout.visibility = View.GONE
+                        b.passwordLayout.visibility = View.GONE
+                        
+                        // איפוס הכפתור למקרה שנתקע
+                        b.btnSendCode.isEnabled = true
+                        b.btnSendCode.text = "SEND CODE"
+                    }
+                    else if (state is TdApi.AuthorizationStateWaitCode) {
+                        b.loginContainer.visibility = View.VISIBLE
+                        b.phoneLayout.visibility = View.GONE
+                        b.codeLayout.visibility = View.VISIBLE
+                    }
+                    else if (state is TdApi.AuthorizationStateWaitPassword) {
+                        b.loginContainer.visibility = View.VISIBLE
+                        b.codeLayout.visibility = View.GONE
+                        b.passwordLayout.visibility = View.VISIBLE
+                    }
+                    else if (state is TdApi.AuthorizationStateReady) {
+                        b.loginContainer.visibility = View.GONE
+                        b.mainContent.visibility = View.VISIBLE
                     }
                 }
             }
