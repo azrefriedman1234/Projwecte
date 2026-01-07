@@ -29,17 +29,16 @@ object MediaProcessor {
         lX: Float, lY: Float, lScale: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        val safeInput = File(context.cacheDir, "temp_in_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
+        val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
         
         try {
             File(inputPath).copyTo(safeInput, overwrite = true)
         } catch (e: Exception) {
-            showToast(context, "❌ File Error: ${e.message}")
+            showToast(context, "❌ Copy Error")
             onComplete(false)
             return
         }
 
-        // אם אין עריכה - מעבירים הלאה
         if (rects.isEmpty() && logoUri == null) {
             try {
                 safeInput.copyTo(File(outputPath), overwrite = true)
@@ -51,17 +50,17 @@ object MediaProcessor {
         var logoPath: String? = null
         if (logoUri != null) {
             try {
+                val tempLogo = File(context.cacheDir, "logo.png")
                 val inputStream = context.contentResolver.openInputStream(logoUri)
-                val tempLogo = File(context.cacheDir, "temp_logo.png")
                 val outputStream = FileOutputStream(tempLogo)
                 inputStream?.copyTo(outputStream)
                 inputStream?.close()
                 outputStream.close()
                 logoPath = tempLogo.absolutePath
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) { }
         }
 
-        // --- הבנייה החדשה והבטוחה (רשימת ארגומנטים) ---
+        // --- בניית הפקודה כרשימה (מונע שגיאות גרשיים) ---
         val args = mutableListOf<String>()
         args.add("-y")
         args.add("-i"); args.add(safeInput.absolutePath)
@@ -70,10 +69,10 @@ object MediaProcessor {
             args.add("-i"); args.add(logoPath)
         }
 
-        // בניית מחרוזת הפילטרים (בלי גרשיים מסביב - המערכת תוסיף לבד)
         val filter = StringBuilder()
         var currentStream = "[0:v]"
         
+        // הוספת פילטרים של טשטוש
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             val w = "iw*${r.right-r.left}"
@@ -81,24 +80,22 @@ object MediaProcessor {
             val x = "iw*${r.left}"
             val y = "ih*${r.top}"
             
-            // שרשור פילטרים עם נקודה-פסיק
             filter.append("$currentStream split=2[main][tocrop];[tocrop]crop=$w:$h:$x:$y,boxblur=10:1[blurred];[main][blurred]overlay=$x:$y $nextStream;")
             currentStream = nextStream
         }
 
-        // הוספת לוגו או סיום שרשרת
+        // הוספת לוגו או סיום
+        // שים לב: אנחנו משתמשים בשם [v_done] כדי לוודא שזה הקוד החדש
         if (logoPath != null) {
             filter.append("[1:v]scale=iw*${lScale}:-1[logo];")
-            filter.append("$currentStream[logo]overlay=x=W*${lX}:y=H*${lY}[final]")
+            filter.append("$currentStream[logo]overlay=x=W*${lX}:y=H*${lY}[v_done]")
         } else {
-            // שימוש ב-scale כפילטר "דמי" במקום null כדי למנוע בעיות תאימות
-            filter.append("${currentStream}scale=iw:ih[final]")
+            filter.append("${currentStream}scale=iw:ih[v_done]")
         }
 
         args.add("-filter_complex"); args.add(filter.toString())
-        args.add("-map"); args.add("[final]")
+        args.add("-map"); args.add("[v_done]")
         
-        // הגדרות קידוד
         if (isVideo) {
             args.add("-c:v"); args.add("libx264")
             args.add("-preset"); args.add("ultrafast")
@@ -110,7 +107,6 @@ object MediaProcessor {
 
         args.add(outputPath)
 
-        // שימוש בפקודה הבטוחה: executeWithArgumentsAsync
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
             
@@ -119,9 +115,7 @@ object MediaProcessor {
             } else {
                 val logs = session.allLogsAsString
                 val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
-                
-                showToast(context, "❌ Edit Failed!\n$errorMsg")
-                Log.e("FFMPEG_FAIL", logs)
+                showToast(context, "❌ Fix Failed!\n$errorMsg")
                 onComplete(false)
             }
         }
