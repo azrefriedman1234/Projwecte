@@ -5,11 +5,20 @@ import android.graphics.*
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
-import com.pasiflonet.mobile.utils.BlurRect // שימוש בהגדרה המרכזית
+import com.pasiflonet.mobile.utils.BlurRect
 
 class DrawingView(context: Context, attrs: AttributeSet) : View(context, attrs) {
-    private val paint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 5f; pathEffect = DashPathEffect(floatArrayOf(10f, 20f), 0f) }
-    private val blurFill = Paint().apply { color = 0x55000000; style = Paint.Style.FILL }
+    private val paint = Paint().apply { 
+        color = Color.RED
+        style = Paint.Style.STROKE
+        strokeWidth = 5f
+        pathEffect = DashPathEffect(floatArrayOf(10f, 20f), 0f) 
+    }
+    private val blurFill = Paint().apply { 
+        color = 0x55000000
+        style = Paint.Style.FILL 
+    }
+    
     var isBlurMode = false
     private var startX = 0f; private var startY = 0f; private var currentX = 0f; private var currentY = 0f; private var isDrawing = false
     val rects = mutableListOf<BlurRect>()

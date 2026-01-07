@@ -47,9 +47,6 @@ class MainActivity : AppCompatActivity() {
         b.btnVerifyPassword.setOnClickListener { TdLibManager.sendPassword(b.etPassword.text.toString()) }
 
         adapter = ChatAdapter(emptyList()) { msg ->
-            // הודעת דיבוג: לוודא שהלחיצה הגיעה למסך הראשי
-            Toast.makeText(this, "Opening Details...", Toast.LENGTH_SHORT).show()
-
             var thumbPath: String? = null
             var fullId = 0
             var isVideo = false
@@ -72,19 +69,19 @@ class MainActivity : AppCompatActivity() {
                 is TdApi.MessageText -> caption = (msg.content as TdApi.MessageText).text.text
             }
 
-            if (fullId != 0) TdLibManager.downloadFile(fullId)
-
-            try {
-                val intent = Intent(this, DetailsActivity::class.java)
-                if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
-                intent.putExtra("FILE_ID", fullId)
-                intent.putExtra("IS_VIDEO", isVideo)
-                intent.putExtra("CAPTION", caption)
-                startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Error opening screen: ${e.message}", Toast.LENGTH_LONG).show()
-                e.printStackTrace()
+            // הפעלת הורדה ברקע, אבל בלי לעצור את המשתמש!
+            if (fullId != 0) {
+                TdLibManager.downloadFile(fullId)
+                // Toast.makeText(this, "Downloading media in background...", Toast.LENGTH_SHORT).show()
             }
+            
+            // פתיחה מיידית - בלי תנאים!
+            val intent = Intent(this, DetailsActivity::class.java)
+            if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
+            intent.putExtra("FILE_ID", fullId)
+            intent.putExtra("IS_VIDEO", isVideo)
+            intent.putExtra("CAPTION", caption)
+            startActivity(intent)
         }
         
         b.rvMessages.layoutManager = LinearLayoutManager(this)
