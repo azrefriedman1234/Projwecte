@@ -6,12 +6,13 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    // זה מכריח את כל המודולים להשתמש ברשימה הזו בלבד
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://jitpack.io' } // כאן יושב ה-TDLib שביקשת
+        maven { url 'https://jitpack.io' }
     }
 }
-rootProject.name = "Pasiflonet"
+rootProject.name = "PasiflonetMobile"
 include ':app'

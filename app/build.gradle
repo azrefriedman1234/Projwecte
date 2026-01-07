@@ -3,12 +3,6 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
-repositories {
-    google()
-    mavenCentral()
-    maven { url 'https://jitpack.io' }
-}
-
 android {
     namespace 'com.pasiflonet.mobile'
     compileSdk 33
@@ -17,11 +11,10 @@ android {
         applicationId "com.pasiflonet.mobile"
         minSdk 24
         targetSdk 33
-        versionCode 5
-        versionName "1.4-STABLE"
+        versionCode 6
+        versionName "1.5-LTS"
 
         ndk {
-            // מסננים רק ארכיטקטורות נפוצות כדי להקטין סיכוי להתנגשויות
             abiFilters 'armeabi-v7a', 'arm64-v8a'
         }
     }
@@ -47,7 +40,6 @@ android {
     }
     
     packagingOptions {
-        // פתרון התנגשויות קלאסי
         pickFirst '**/*.so'
     }
 
@@ -69,8 +61,8 @@ dependencies {
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     
-    // חזרה לגרסה 5.1 היציבה והמוכרת
-    implementation 'com.arthenica:ffmpeg-kit-full:5.1'
+    // שימוש בגרסת LTS (Long Term Support) - הגרסה הכי יציבה שקיימת
+    implementation 'com.arthenica:ffmpeg-kit-full:4.5.1-1'
     
     implementation 'com.github.tdlibx:td:1.8.56'
     implementation "androidx.work:work-runtime-ktx:2.8.1"
