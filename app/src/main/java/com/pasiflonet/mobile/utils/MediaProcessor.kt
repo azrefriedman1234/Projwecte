@@ -6,7 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.net.Uri
 import android.util.Log
-import com.pasiflonet.mobile.ui.BlurRect
+import com.pasiflonet.mobile.utils.BlurRect // Import מתוקן
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
@@ -14,7 +14,6 @@ import java.io.FileOutputStream
 
 object MediaProcessor {
 
-    // פונקציה ראשית שמחליטה איך לעבד (תמונה רגיל, וידאו עם FFmpeg)
     fun processContent(
         context: Context,
         inputPath: String,
@@ -28,7 +27,6 @@ object MediaProcessor {
         if (isVideo) {
             processVideoFFmpeg(context, inputPath, outputPath, blurRects, logoUri, lX, lY, lScale, onComplete)
         } else {
-            // עיבוד תמונה נשאר מקומי ומהיר (Canvas)
             processImageCanvas(context, inputPath, outputPath, blurRects, logoUri, lX, lY, lScale)
             onComplete(true)
         }
@@ -40,63 +38,33 @@ object MediaProcessor {
         lX: Float, lY: Float, lScale: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        // 1. הכנת הלוגו כקובץ זמני (FFmpeg צריך נתיב קובץ, לא Uri)
-        var logoCmd = ""
-        var filterComplex = ""
-        var inputIndex = 0
+        val inputs = mutableListOf("-y", "-i", inPath)
+        var filterComplex = "[0:v]null[v0];" 
+        var lastStream = "[v0]"
         
-        // רשימת קלטים (Inputs)
-        val inputs = mutableListOf("-y", "-i", inPath) // קלט 0: הוידאו
-
-        // בדיקת רזולוציית וידאו כדי לחשב פיקסלים
-        val probe = FFmpegKit.execute("-i \"$inPath\"") 
-        // (בפועל נניח חישוב פשוט או נשתמש בפילטרים יחסיים, כאן נשתמש בהנחה שהפילטר מקבל פרמטרים)
-
-        // בניית פילטר הטשטוש (Delogo)
-        // משתמשים ב-delogo לכל מלבן. שרשור פילטרים: [0:v]delogo...[v1];[v1]delogo...[v2]
-        var lastStream = "[0:v]"
-        var filterCount = 0
-
-        rects.forEach { r ->
-            // FFmpeg דורש פיקסלים, אבל delogo תומך רק בערכים מוחלטים.
-            // טריק: נשתמש בחישוב יחסי בתוך הפילטר אם אפשר, או שנניח רזולוציה.
-            // לביטחון: נשתמש במיקומים באחוזים כפול רוחב/גובה הוידאו (iw/ih)
-            val currStream = "v${filterCount}"
-            val nextStream = "v${filterCount + 1}"
-            
-            // המרה לאחוזים (0-100) עבור ביטויים מתמטיים או שימוש בערכים
-            // הערה: delogo לא תמיד תומך בביטויים כמו iw*0.5.
-            // לכן נשתמש ב-boxblur עם מסכה, אבל זה מסובך.
-            // פתרון פשוט: שימוש ב-drawbox עם צבע עבה, או boxblur על אזור.
-            // נשתמש ב- delogo עם ביטויים אם נתמך, או נבצע הערכה גסה.
-            // *בגרסה הזו*: נשתמש ב-boxblur פשוט על כל הפריים אם יש טשטוש, לטובת יציבות.
-            // לגרסה הבאה נדייק קואורדינטות.
-        }
-
-        // בניית פקודת הלוגו
+        // הערה: בגרסה זו הפישוט של הטשטוש כדי למנוע קריסה ללא פילטרים מורכבים
+        // במקום זה נתמקד בלוגו
+        
         if (logoUri != null) {
             val logoFile = File(ctx.cacheDir, "temp_logo.png")
-            ctx.contentResolver.openInputStream(logoUri)?.use { input ->
-                FileOutputStream(logoFile).use { output -> input.copyTo(output) }
+            try {
+                ctx.contentResolver.openInputStream(logoUri)?.use { input ->
+                    FileOutputStream(logoFile).use { output -> input.copyTo(output) }
+                }
+                inputs.add("-i")
+                inputs.add(logoFile.absolutePath)
+                
+                val xPos = "(main_w-overlay_w)*$lX"
+                val yPos = "(main_h-overlay_h)*$lY"
+                // סקייל לוגו
+                filterComplex += "[1:v]scale=iw*0.2*$lScale:-1[logo];$lastStream[logo]overlay=$xPos:$yPos"
+            } catch (e: Exception) {
+                Log.e("MediaProcessor", "Logo Error", e)
             }
-            inputs.add("-i")
-            inputs.add(logoFile.absolutePath) // קלט 1: הלוגו
-            
-            // בניית פילטר Overlay
-            // [1:v]scale=...[logo];[prevStream][logo]overlay=...
-            val logoW = "iw*0.2*$lScale" // 20% מרוחב הוידאו * סקייל
-            val logoH = "-1" // שמירה על יחס
-            val xPos = "(main_w-overlay_w)*$lX"
-            val yPos = "(main_h-overlay_h)*$lY"
-            
-            filterComplex += "[1:v]scale=$logoW:$logoH[logo];$lastStream[logo]overlay=$xPos:$yPos"
         } else {
-            // אם אין לוגו, רק מעתיקים (או מעבירים את זרם הטשטוש)
-            filterComplex += "${lastStream}null" 
+            filterComplex += "${lastStream}null"
         }
 
-        // הרצת הפקודה
-        // שימוש ב-preset ultrafast למהירות מקסימלית באנדרואיד
         val cmd = inputs + listOf("-filter_complex", filterComplex, "-c:a", "copy", "-preset", "ultrafast", outPath)
         
         FFmpegKit.executeAsync(cmd.joinToString(" ")) { session ->

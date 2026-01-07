@@ -5,8 +5,7 @@ import android.graphics.*
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
-
-data class BlurRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
+import com.pasiflonet.mobile.utils.BlurRect // שימוש בהגדרה המרכזית
 
 class DrawingView(context: Context, attrs: AttributeSet) : View(context, attrs) {
     private val paint = Paint().apply { color = Color.RED; style = Paint.Style.STROKE; strokeWidth = 5f; pathEffect = DashPathEffect(floatArrayOf(10f, 20f), 0f) }
