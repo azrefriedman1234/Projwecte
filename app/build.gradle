@@ -1,0 +1,64 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.pasiflonet.mobile'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "com.pasiflonet.mobile"
+        minSdk 24
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
+        
+        // הגדרת ארכיטקטורות נתמכות ל-FFmpeg
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    buildFeatures {
+        viewBinding true
+    }
+    packagingOptions {
+        pickFirst 'lib/x86/libc++_shared.so'
+        pickFirst 'lib/x86_64/libc++_shared.so'
+        pickFirst 'lib/armeabi-v7a/libc++_shared.so'
+        pickFirst 'lib/arm64-v8a/libc++_shared.so'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.9.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    
+    // טעינת FFmpeg מקומי
+    implementation files('libs/ffmpeg-kit-full.aar')
+    
+    // שימוש בגרסה יציבה של Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
+    
+    // Coil לטעינת תמונות
+    implementation 'io.coil-kt:coil:2.4.0'
+    
+    // DataStore
+    implementation "androidx.datastore:datastore-preferences:1.0.0"
+}

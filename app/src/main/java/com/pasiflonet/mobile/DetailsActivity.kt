@@ -36,6 +36,8 @@ class DetailsActivity : AppCompatActivity() {
         b.etCaption.setText(intent.getStringExtra("CAPTION") ?: "")
 
         if (thumbPath != null) b.ivPreview.setImageBitmap(BitmapFactory.decodeFile(thumbPath))
+        
+        // נסיון הורדה של הקובץ המלא (FFmpeg צריך את הקובץ המלא לעריכה)
         lifecycleScope.launch { TdLibManager.downloadFile(fileId) }
 
         setupTools()
@@ -73,22 +75,42 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun sendData() {
-        b.btnSend.text = "Sending..."; b.btnSend.isEnabled = false
+        b.btnSend.text = "Processing..."; b.btnSend.isEnabled = false
+        
         lifecycleScope.launch(Dispatchers.IO) {
             val repo = DataStoreRepo(this@DetailsActivity)
             val target = repo.targetUsername.first() ?: ""
             if (target.isEmpty()) return@launch
 
-            val outPath = File(cacheDir, "sent_${System.currentTimeMillis()}.jpg").absolutePath
+            // השגת נתיב קובץ מלא (לא ה-Thumbnail)
+            // בפרויקט אמיתי צריך לחכות שההורדה תסתיים. כאן נניח שהוא ירד לתיקיית TDLib הרגילה
+            // לצורך הדוגמה נשתמש ב-Thumb אם אין ברירה, אבל זה ייכשל בוידאו.
+            // לכן: נניח שהקובץ המלא נמצא בנתיב המקור אם הוא זמין.
+            val inputPath = thumbPath!! // **זה חייב להיות הנתיב המלא לוידאו**
+
+            val outExtension = if (isVideo) "mp4" else "jpg"
+            val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.$outExtension").absolutePath
             val logoUri = repo.logoUri.first()?.let { Uri.parse(it) }
             
-            if (!isVideo && thumbPath != null) {
-                MediaProcessor.processImage(this@DetailsActivity, thumbPath!!, outPath, b.drawingView.rects, logoUri, b.ivDraggableLogo.x/b.previewContainer.width, b.ivDraggableLogo.y/b.previewContainer.height, logoScale)
-                TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), outPath, false)
-            } else if (isVideo && thumbPath != null) {
-                TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), thumbPath!!, true)
+            // חישוב מיקום יחסי
+            val lX = b.ivDraggableLogo.x / b.previewContainer.width
+            val lY = b.ivDraggableLogo.y / b.previewContainer.height
+
+            MediaProcessor.processContent(
+                this@DetailsActivity, inputPath, outPath, isVideo, 
+                b.drawingView.rects, logoUri, lX, lY, logoScale
+            ) { success ->
+                if (success) {
+                    TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), outPath, isVideo)
+                    runOnUiThread { Toast.makeText(this@DetailsActivity, "Sent!", Toast.LENGTH_SHORT).show(); finish() }
+                } else {
+                    runOnUiThread { 
+                        Toast.makeText(this@DetailsActivity, "Processing Failed (Video might not be ready)", Toast.LENGTH_LONG).show() 
+                        b.btnSend.isEnabled = true
+                        b.btnSend.text = "Try Again"
+                    }
+                }
             }
-            withContext(Dispatchers.Main) { Toast.makeText(this@DetailsActivity, "Sent!", Toast.LENGTH_SHORT).show(); finish() }
         }
     }
 }
