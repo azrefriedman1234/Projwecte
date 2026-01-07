@@ -33,40 +33,46 @@ class DetailsActivity : AppCompatActivity() {
             setContentView(b.root)
 
             thumbPath = intent.getStringExtra("THUMB_PATH")
+            val miniThumb = intent.getByteArrayExtra("MINI_THUMB")
+            
             fileId = intent.getIntExtra("FILE_ID", 0)
             isVideo = intent.getBooleanExtra("IS_VIDEO", false)
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
-            // טעינת תמונה חכמה:
+            // שלב 1: הצגה מיידית של מה שיש (הכי מהר שאפשר)
+            if (miniThumb != null && miniThumb.isNotEmpty()) {
+                b.ivPreview.load(miniThumb)
+                b.previewContainer.visibility = View.VISIBLE
+            }
+
+            // שלב 2: שדרוג לאיכות גבוהה
             if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
-                // מקרה 1: התמונה קיימת בדיסק - מציגים מיד
+                // אם הקובץ האיכותי כבר כאן, נחליף אליו מיד
                 b.ivPreview.load(File(thumbPath!!))
                 b.previewContainer.visibility = View.VISIBLE
             } else if (!thumbPath.isNullOrEmpty()) {
-                // מקרה 2: יש נתיב אבל הקובץ עוד לא ירד - מנסים לטעון כל שנייה
-                b.previewContainer.visibility = View.VISIBLE
-                // משתמשים ב-Coil שינסה לטעון, וגם בלולאה שמחכה לקובץ
+                // אם יש נתיב אבל הקובץ בדרך... נחכה לו ונחליף כשיגיע
+                // המיני-טאבנייל כבר מוצג, אז המשתמש לא רואה שחור
+                Toast.makeText(this, "Downloading High Quality...", Toast.LENGTH_SHORT).show()
                 waitForThumbnail(thumbPath!!)
-            } else if (fileId != 0) {
-                 b.previewContainer.visibility = View.VISIBLE
-                 Toast.makeText(this, "Downloading...", Toast.LENGTH_SHORT).show()
-            } else {
-                b.previewContainer.visibility = View.INVISIBLE
-                disableVisualTools()
+            } else if (miniThumb == null) {
+                // רק אם אין גם וגם
+                Toast.makeText(this, "Loading...", Toast.LENGTH_SHORT).show()
             }
+            
             setupTools()
         } catch (e: Exception) {
             Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
-    // פונקציה שמחכה לתמונה החדה שתסיים לרדת
     private fun waitForThumbnail(path: String) {
         lifecycleScope.launch {
             var attempts = 0
-            while (attempts < 20) { // מנסה במשך 10 שניות (חצי שנייה כל פעם)
+            while (attempts < 20) {
                 if (File(path).exists()) {
+                    // ברגע שההורדה מסתיימת - מחליפים לתמונה החדה
                     b.ivPreview.load(File(path))
                     break
                 }
@@ -83,7 +89,6 @@ class DetailsActivity : AppCompatActivity() {
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f }
         
-        // --- תיקון קריסת הלוגו ---
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false
             lifecycleScope.launch {
@@ -91,13 +96,10 @@ class DetailsActivity : AppCompatActivity() {
                     val uriStr = DataStoreRepo(this@DetailsActivity).logoUri.first()
                     if (uriStr != null) { 
                         b.ivDraggableLogo.visibility = View.VISIBLE
-                        // שימוש ב-Coil לטעינה בטוחה! מונע OutOfMemory וקריסות
                         b.ivDraggableLogo.load(Uri.parse(uriStr))
                         b.ivDraggableLogo.alpha = 1.0f 
                     } else Toast.makeText(this@DetailsActivity, "Set Logo in Settings first!", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    Toast.makeText(this@DetailsActivity, "Logo Error: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+                } catch (e: Exception) { }
             }
         }
 

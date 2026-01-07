@@ -50,42 +50,35 @@ class MainActivity : AppCompatActivity() {
 
         adapter = ChatAdapter(emptyList()) { msg ->
             var thumbPath: String? = null
+            var miniThumbData: ByteArray? = null
             var fullId = 0
             var isVideo = false
             var caption = ""
-            var thumbIdToDownload = 0 // מזהה לתמונה הממוזערת האיכותית
+            var downloadId = 0
 
             when (msg.content) {
                 is TdApi.MessagePhoto -> {
                     val c = msg.content as TdApi.MessagePhoto
-                    // לוגיקה חדשה:
-                    // 1. האם הקובץ הגדול (האחרון) כבר קיים?
-                    val bigPhoto = c.photo.sizes.lastOrNull()
-                    if (bigPhoto != null && File(bigPhoto.photo.local.path).exists()) {
-                        thumbPath = bigPhoto.photo.local.path
-                    } else {
-                        // 2. אם לא, נחפש את ה-Thumbnail הבינוני (לא המיני!)
-                        // בדרך כלל גודל 's' או 'm'
-                        val mediumPhoto = c.photo.sizes.firstOrNull { it.type == "m" } ?: c.photo.sizes.firstOrNull()
-                        if (mediumPhoto != null) {
-                            thumbPath = mediumPhoto.photo.local.path
-                            if (!File(thumbPath).exists()) {
-                                thumbIdToDownload = mediumPhoto.photo.id // נסמן להורדה דחופה
-                            }
-                        }
+                    // 1. תמיד לוקחים את המיני-טאבנייל לגיבוי מיידי
+                    miniThumbData = c.photo.minithumbnail?.data
+                    
+                    // 2. חיפוש הנתיב האיכותי ביותר
+                    val big = c.photo.sizes.lastOrNull()
+                    if (big != null) {
+                        thumbPath = big.photo.local.path
+                        if (!File(thumbPath).exists()) downloadId = big.photo.id
                     }
+                    
                     fullId = if (c.photo.sizes.isNotEmpty()) c.photo.sizes.last().photo.id else 0
                     caption = c.caption.text
                 }
                 is TdApi.MessageVideo -> {
                     val c = msg.content as TdApi.MessageVideo
-                    // בוידאו יש שדה thumbnail נפרד שהוא איכותי
+                    miniThumbData = c.video.minithumbnail?.data
                     val thumb = c.video.thumbnail
                     if (thumb != null) {
                         thumbPath = thumb.file.local.path
-                        if (!File(thumbPath).exists()) {
-                            thumbIdToDownload = thumb.file.id
-                        }
+                        if (!File(thumbPath).exists()) downloadId = thumb.file.id
                     }
                     fullId = c.video.video.id
                     isVideo = true
@@ -94,13 +87,13 @@ class MainActivity : AppCompatActivity() {
                 is TdApi.MessageText -> caption = (msg.content as TdApi.MessageText).text.text
             }
 
-            // הורדה כפולה: גם את התמונה הממוזערת (מיידי) וגם את הקובץ המלא (רקע)
-            if (thumbIdToDownload != 0) TdLibManager.downloadFile(thumbIdToDownload)
+            if (downloadId != 0) TdLibManager.downloadFile(downloadId)
             if (fullId != 0) TdLibManager.downloadFile(fullId)
             
             val intent = Intent(this, DetailsActivity::class.java)
-            // שולחים את הנתיב גם אם הוא עדיין ריק - DetailsActivity יטפל בזה עם Coil
             if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
+            if (miniThumbData != null) intent.putExtra("MINI_THUMB", miniThumbData) // חובה!
+            
             intent.putExtra("FILE_ID", fullId)
             intent.putExtra("IS_VIDEO", isVideo)
             intent.putExtra("CAPTION", caption)
@@ -113,7 +106,6 @@ class MainActivity : AppCompatActivity() {
         b.btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
     }
     
-    // (Boilerplate code stays the same)
     private fun checkApiAndInit() { lifecycleScope.launch { val r=DataStoreRepo(this@MainActivity); val i=r.apiId.first(); val h=r.apiHash.first(); if(i!=null&&h!=null){ b.apiContainer.visibility=View.GONE; TdLibManager.init(this@MainActivity,i,h); observeAuth() } else { b.apiContainer.visibility=View.VISIBLE; b.mainContent.visibility=View.GONE } } }
     private fun observeAuth() { lifecycleScope.launch { TdLibManager.authState.collect { s -> runOnUiThread { if(s is TdApi.AuthorizationStateWaitPhoneNumber){ b.apiContainer.visibility=View.GONE; b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.GONE; b.btnSendCode.isEnabled=true; b.btnSendCode.text="SEND CODE" } else if(s is TdApi.AuthorizationStateWaitCode){ b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.GONE; b.codeLayout.visibility=View.VISIBLE } else if(s is TdApi.AuthorizationStateWaitPassword){ b.loginContainer.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.VISIBLE } else if(s is TdApi.AuthorizationStateReady){ b.loginContainer.visibility=View.GONE; b.mainContent.visibility=View.VISIBLE } } } }; lifecycleScope.launch { TdLibManager.currentMessages.collect { m -> runOnUiThread { adapter.updateList(m) } } } }
     private fun checkPermissions() { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)) else requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE)) }
