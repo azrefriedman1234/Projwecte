@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
+import android.graphics.Color // ייבוא נדרש לצבעים
 
 class DetailsActivity : AppCompatActivity() {
     private lateinit var b: ActivityDetailsBinding
@@ -41,31 +42,27 @@ class DetailsActivity : AppCompatActivity() {
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
-            // הצגת תמונה (כמו קודם)
             if (miniThumb != null && miniThumb.isNotEmpty()) { b.ivPreview.load(miniThumb); b.previewContainer.visibility = View.VISIBLE }
             if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) { b.ivPreview.load(File(thumbPath!!)); b.previewContainer.visibility = View.VISIBLE }
             else if (!thumbPath.isNullOrEmpty()) { waitForThumbnail(thumbPath!!) }
             
             setupTools()
-            setupMediaToggle() // פונקציה חדשה למתג
+            setupMediaToggle()
 
         } catch (e: Exception) { Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show() }
     }
 
     private fun setupMediaToggle() {
-        // האזנה לשינוי במתג
         b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked ->
             if (isChecked) {
-                // מצב מדיה פעיל: מראים הכל רגיל
                 b.vDisabledOverlay.visibility = View.GONE
                 b.tvTextOnlyLabel.visibility = View.GONE
                 b.mediaToolsContainer.alpha = 1.0f
                 enableMediaTools(true)
             } else {
-                // מצב טקסט בלבד: מחשיכים את התמונה ומבטלים כפתורי עריכה
                 b.vDisabledOverlay.visibility = View.VISIBLE
                 b.tvTextOnlyLabel.visibility = View.VISIBLE
-                b.mediaToolsContainer.alpha = 0.3f // חיווי ויזואלי שהכלים לא רלוונטיים
+                b.mediaToolsContainer.alpha = 0.3f
                 enableMediaTools(false)
             }
         }
@@ -75,7 +72,6 @@ class DetailsActivity : AppCompatActivity() {
         b.btnModeBlur.isEnabled = enable
         b.btnModeLogo.isEnabled = enable
         b.sbLogoSize.isEnabled = enable
-        // אם מכבים, מסתירים את כלי הציור
         if (!enable) {
             b.drawingView.visibility = View.GONE
             b.ivDraggableLogo.visibility = View.GONE
@@ -94,17 +90,28 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f }
+        
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false
             lifecycleScope.launch {
                 try {
                     val uriStr = DataStoreRepo(this@DetailsActivity).logoUri.first()
-                    b.ivDraggableLogo.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f
-                    if (uriStr != null) b.ivDraggableLogo.load(Uri.parse(uriStr))
-                    else b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery) { tint(android.graphics.Color.WHITE) }
+                    
+                    b.ivDraggableLogo.visibility = View.VISIBLE
+                    b.ivDraggableLogo.alpha = 1.0f
+                    
+                    if (uriStr != null) { 
+                        b.ivDraggableLogo.load(Uri.parse(uriStr))
+                        b.ivDraggableLogo.clearColorFilter() // ביטול צבע אם היה
+                    } else {
+                        // התיקון: טעינת האייקון וצביעתו בלבן בצורה תקנית
+                        b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery)
+                        b.ivDraggableLogo.setColorFilter(Color.WHITE)
+                    }
                 } catch (e: Exception) { }
             }
         }
+
         b.ivDraggableLogo.setOnTouchListener { view, event ->
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
             when (event.action) {
@@ -113,11 +120,13 @@ class DetailsActivity : AppCompatActivity() {
             }
             true
         }
+
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { val s = 0.5f + (p/100f); b.ivDraggableLogo.scaleX = s; b.ivDraggableLogo.scaleY = s; logoScale = s }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
+
         b.btnTranslate.setOnClickListener { lifecycleScope.launch { val t = b.etCaption.text.toString(); if (t.isNotEmpty()) b.etCaption.setText(TranslationManager.translateToHebrew(t)) } }
         b.btnSend.setOnClickListener { sendData() }
         b.btnCancel.setOnClickListener { finish() }
@@ -129,18 +138,14 @@ class DetailsActivity : AppCompatActivity() {
             val target = repo.targetUsername.first() ?: ""
             if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Set Target Channel!", Toast.LENGTH_SHORT).show(); return@launch }
             
-            // --- בדיקת המתג ---
             val includeMedia = b.swIncludeMedia.isChecked
-            
             if (!includeMedia) {
-                // שליחת טקסט בלבד
                 TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), null, false)
                 Toast.makeText(this@DetailsActivity, "Text Sent!", Toast.LENGTH_SHORT).show()
                 finish()
                 return@launch
             }
 
-            // שליחת מדיה (כרגיל)
             val logoUriStr = repo.logoUri.first()
             val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
             val lX = if (b.previewContainer.width > 0) b.ivDraggableLogo.x / b.previewContainer.width else 0f
