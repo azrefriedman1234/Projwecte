@@ -43,13 +43,19 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // --- מנגנון הגנה מפני קריסה ---
+        // עטיפת הכל ב-Try-Catch אחד גדול
         try {
             b = ActivitySettingsBinding.inflate(layoutInflater)
             setContentView(b.root)
 
-            updateCacheSize()
+            // נסיון בטוח לטעון מטמון
+            try {
+                updateCacheSize()
+            } catch (e: Exception) {
+                b.btnClearCache.text = "Clear Cache"
+            }
 
+            // נסיון בטוח לטעון נתונים
             lifecycleScope.launch {
                 try {
                     val repo = DataStoreRepo(this@SettingsActivity)
@@ -62,7 +68,7 @@ class SettingsActivity : AppCompatActivity() {
                         try { b.ivCurrentLogo.setImageURI(Uri.parse(currentLogo)) } catch (e: Exception) {}
                     }
                 } catch (e: Exception) {
-                    // התעלמות משגיאות טעינת נתונים כדי שהמסך ייפתח בכל מקרה
+                    // התעלמות משגיאות טעינה ראשוניות
                 }
             }
 
@@ -70,9 +76,13 @@ class SettingsActivity : AppCompatActivity() {
                 val target = b.etTargetUsername.text.toString()
                 if (target.isNotEmpty()) {
                     lifecycleScope.launch {
-                        DataStoreRepo(this@SettingsActivity).saveTargetUsername(target)
-                        Toast.makeText(this@SettingsActivity, "Saved! Target: $target", Toast.LENGTH_SHORT).show()
-                        finish()
+                        try {
+                            DataStoreRepo(this@SettingsActivity).saveTargetUsername(target)
+                            Toast.makeText(this@SettingsActivity, "Saved! Target: $target", Toast.LENGTH_SHORT).show()
+                            finish()
+                        } catch (e: Exception) {
+                            Toast.makeText(this@SettingsActivity, "Save Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 } else {
                     Toast.makeText(this@SettingsActivity, "Enter channel name (e.g. @MyChannel)", Toast.LENGTH_SHORT).show()
@@ -83,27 +93,28 @@ class SettingsActivity : AppCompatActivity() {
             
             b.btnClearCache.setOnClickListener {
                 lifecycleScope.launch {
-                    b.btnClearCache.text = "Cleaning..."
-                    b.btnClearCache.isEnabled = false
-                    CacheManager.clearAppCache(this@SettingsActivity)
-                    updateCacheSize()
-                    b.btnClearCache.isEnabled = true
+                    try {
+                        b.btnClearCache.text = "Cleaning..."
+                        b.btnClearCache.isEnabled = false
+                        CacheManager.clearAppCache(this@SettingsActivity)
+                        updateCacheSize()
+                        b.btnClearCache.isEnabled = true
+                    } catch (e: Exception) {
+                         b.btnClearCache.isEnabled = true
+                         b.btnClearCache.text = "Error Cleaning"
+                    }
                 }
             }
         } catch (e: Exception) {
-            // אם המסך קורס בטעינה, תפוס את השגיאה, הצג אותה למשתמש וסגור בעדינות
+            // רשת ביטחון אחרונה - אם המסך קורס בטעינה
             e.printStackTrace()
-            Toast.makeText(this, "Critical Error opening Settings: ${e.message}", Toast.LENGTH_LONG).show()
-            finish()
+            Toast.makeText(this, "Settings Crash: ${e.message}", Toast.LENGTH_LONG).show()
+            finish() // סגירה עדינה
         }
     }
 
     private fun updateCacheSize() {
-        try {
-            val size = CacheManager.getCacheSize(this)
-            b.btnClearCache.text = "🗑️ Clear Cache (Current: $size)"
-        } catch (e: Exception) {
-            b.btnClearCache.text = "🗑️ Clear Cache"
-        }
+        val size = CacheManager.getCacheSize(this)
+        b.btnClearCache.text = "🗑️ Clear Cache (Current: $size)"
     }
 }
