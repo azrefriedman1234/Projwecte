@@ -3,6 +3,12 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+// הוספה קריטית: הגדרת מאגרים מפורשת בתוך המודול
+repositories {
+    google()
+    mavenCentral()
+}
+
 android {
     namespace 'com.pasiflonet.mobile'
     compileSdk 33
@@ -11,11 +17,10 @@ android {
         applicationId "com.pasiflonet.mobile"
         minSdk 24
         targetSdk 33
-        versionCode 3
-        versionName "1.2"
+        versionCode 4
+        versionName "1.3"
 
         ndk {
-            // תמיכה בכל המעבדים הנפוצים
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
         }
     }
@@ -40,7 +45,6 @@ android {
         }
     }
     
-    // טיפול בהתנגשויות קבצי מערכת
     packagingOptions {
         pickFirst 'lib/x86/libc++_shared.so'
         pickFirst 'lib/x86_64/libc++_shared.so'
@@ -70,8 +74,8 @@ dependencies {
     implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     
-    // התיקון: הגרסה הרשמית והיציבה של FFmpeg
-    implementation 'com.arthenica:ffmpeg-kit-full:6.0-2'
+    // התיקון: שימוש בגרסה 6.0 הרגילה (בלי -2) שנמצאת בטוח במאגר
+    implementation 'com.arthenica:ffmpeg-kit-full:6.0'
     
     implementation 'com.github.tdlibx:td:1.8.56'
     implementation "androidx.work:work-runtime-ktx:2.8.1"
