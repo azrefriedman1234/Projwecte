@@ -10,6 +10,7 @@ import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 
 object MediaProcessor {
 
@@ -17,6 +18,11 @@ object MediaProcessor {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }
+    }
+
+    // פונקציית עזר קריטית: הופכת מספרים לפורמט אמריקאי (0.5 ולא 0,5)
+    private fun fmt(value: Float): String {
+        return String.format(Locale.US, "%.4f", value)
     }
 
     fun processContent(
@@ -60,7 +66,6 @@ object MediaProcessor {
             } catch (e: Exception) { }
         }
 
-        // --- בניית הפקודה כרשימה (מונע שגיאות גרשיים) ---
         val args = mutableListOf<String>()
         args.add("-y")
         args.add("-i"); args.add(safeInput.absolutePath)
@@ -72,23 +77,27 @@ object MediaProcessor {
         val filter = StringBuilder()
         var currentStream = "[0:v]"
         
-        // הוספת פילטרים של טשטוש
+        // תיקון: שימוש ב-fmt() כדי למנוע פסיקים במספרים
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
-            val w = "iw*${r.right-r.left}"
-            val h = "ih*${r.bottom-r.top}"
-            val x = "iw*${r.left}"
-            val y = "ih*${r.top}"
+            
+            // חישוב המידות בפורמט תקין
+            val w = "iw*${fmt(r.right-r.left)}"
+            val h = "ih*${fmt(r.bottom-r.top)}"
+            val x = "iw*${fmt(r.left)}"
+            val y = "ih*${fmt(r.top)}"
             
             filter.append("$currentStream split=2[main][tocrop];[tocrop]crop=$w:$h:$x:$y,boxblur=10:1[blurred];[main][blurred]overlay=$x:$y $nextStream;")
             currentStream = nextStream
         }
 
-        // הוספת לוגו או סיום
-        // שים לב: אנחנו משתמשים בשם [v_done] כדי לוודא שזה הקוד החדש
         if (logoPath != null) {
-            filter.append("[1:v]scale=iw*${lScale}:-1[logo];")
-            filter.append("$currentStream[logo]overlay=x=W*${lX}:y=H*${lY}[v_done]")
+            val s = fmt(lScale)
+            val lx = fmt(lX)
+            val ly = fmt(lY)
+            
+            filter.append("[1:v]scale=iw*$s:-1[logo];")
+            filter.append("$currentStream[logo]overlay=x=W*$lx:y=H*$ly[v_done]")
         } else {
             filter.append("${currentStream}scale=iw:ih[v_done]")
         }
@@ -114,8 +123,9 @@ object MediaProcessor {
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
-                val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
+                val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
                 showToast(context, "❌ Fix Failed!\n$errorMsg")
+                Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
         }
