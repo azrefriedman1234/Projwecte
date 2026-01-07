@@ -14,6 +14,7 @@ import com.pasiflonet.mobile.utils.DataStoreRepo
 import com.pasiflonet.mobile.utils.MediaProcessor
 import com.pasiflonet.mobile.utils.TranslationManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
@@ -32,25 +33,22 @@ class DetailsActivity : AppCompatActivity() {
             setContentView(b.root)
 
             thumbPath = intent.getStringExtra("THUMB_PATH")
-            val miniThumb = intent.getByteArrayExtra("MINI_THUMB") // קבלת הגיבוי
-            
             fileId = intent.getIntExtra("FILE_ID", 0)
             isVideo = intent.getBooleanExtra("IS_VIDEO", false)
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
-            // לוגיקה משולבת: איכות גבוהה -> איכות נמוכה -> טעינה
+            // טעינת תמונה חכמה:
             if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
-                // יש קובץ מקומי איכותי
+                // מקרה 1: התמונה קיימת בדיסק - מציגים מיד
                 b.ivPreview.load(File(thumbPath!!))
                 b.previewContainer.visibility = View.VISIBLE
-            } else if (miniThumb != null && miniThumb.isNotEmpty()) {
-                // אין קובץ, אבל יש Mini Thumbnail בזיכרון (מיידי!)
-                b.ivPreview.load(miniThumb)
+            } else if (!thumbPath.isNullOrEmpty()) {
+                // מקרה 2: יש נתיב אבל הקובץ עוד לא ירד - מנסים לטעון כל שנייה
                 b.previewContainer.visibility = View.VISIBLE
-                if (fileId != 0) Toast.makeText(this, "Loading High Quality...", Toast.LENGTH_SHORT).show()
+                // משתמשים ב-Coil שינסה לטעון, וגם בלולאה שמחכה לקובץ
+                waitForThumbnail(thumbPath!!)
             } else if (fileId != 0) {
-                 // אין כלום, מחכים להורדה
                  b.previewContainer.visibility = View.VISIBLE
                  Toast.makeText(this, "Downloading...", Toast.LENGTH_SHORT).show()
             } else {
@@ -63,6 +61,21 @@ class DetailsActivity : AppCompatActivity() {
         }
     }
 
+    // פונקציה שמחכה לתמונה החדה שתסיים לרדת
+    private fun waitForThumbnail(path: String) {
+        lifecycleScope.launch {
+            var attempts = 0
+            while (attempts < 20) { // מנסה במשך 10 שניות (חצי שנייה כל פעם)
+                if (File(path).exists()) {
+                    b.ivPreview.load(File(path))
+                    break
+                }
+                delay(500)
+                attempts++
+            }
+        }
+    }
+
     private fun disableVisualTools() {
         b.btnModeBlur.isEnabled = false; b.btnModeLogo.isEnabled = false; b.sbLogoSize.isEnabled = false
     }
@@ -70,6 +83,7 @@ class DetailsActivity : AppCompatActivity() {
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f }
         
+        // --- תיקון קריסת הלוגו ---
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false
             lifecycleScope.launch {
@@ -77,10 +91,13 @@ class DetailsActivity : AppCompatActivity() {
                     val uriStr = DataStoreRepo(this@DetailsActivity).logoUri.first()
                     if (uriStr != null) { 
                         b.ivDraggableLogo.visibility = View.VISIBLE
-                        b.ivDraggableLogo.setImageURI(Uri.parse(uriStr))
+                        // שימוש ב-Coil לטעינה בטוחה! מונע OutOfMemory וקריסות
+                        b.ivDraggableLogo.load(Uri.parse(uriStr))
                         b.ivDraggableLogo.alpha = 1.0f 
-                    } else Toast.makeText(this@DetailsActivity, "Set Logo in Settings!", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) { }
+                    } else Toast.makeText(this@DetailsActivity, "Set Logo in Settings first!", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this@DetailsActivity, "Logo Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             }
         }
 
