@@ -31,34 +31,34 @@ class DetailsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
         try {
             b = ActivityDetailsBinding.inflate(layoutInflater)
             setContentView(b.root)
 
-            // קבלת נתונים בצורה בטוחה
             thumbPath = intent.getStringExtra("THUMB_PATH")
             fileId = intent.getIntExtra("FILE_ID", 0)
             isVideo = intent.getBooleanExtra("IS_VIDEO", false)
             val caption = intent.getStringExtra("CAPTION") ?: ""
-            
             b.etCaption.setText(caption)
 
-            // טעינת תמונה בטוחה באמצעות Coil
+            // לוגיקה לטיפול בטקסט לעומת מדיה
             if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
+                // יש מדיה להציג
                 b.ivPreview.load(File(thumbPath!!))
+                b.previewContainer.visibility = View.VISIBLE
             } else {
-                Toast.makeText(this, "Downloading media...", Toast.LENGTH_SHORT).show()
-                // אם אין תמונה, ננסה להוריד אותה
-                lifecycleScope.launch { TdLibManager.downloadFile(fileId) }
+                // טקסט בלבד - מסתירים את התצוגה המקדימה ואת כלי העריכה הויזואלית
+                b.previewContainer.visibility = View.INVISIBLE // שומר על המקום או GONE לביטול
+                b.btnModeBlur.isEnabled = false
+                b.btnModeLogo.isEnabled = false
+                b.sbLogoSize.isEnabled = false
+                Toast.makeText(this, "Text Mode Editing", Toast.LENGTH_SHORT).show()
             }
 
             setupTools()
-            
         } catch (e: Exception) {
             e.printStackTrace()
-            Toast.makeText(this, "Error opening details: ${e.message}", Toast.LENGTH_LONG).show()
-            finish() // סוגר את המסך במקום לקרוס
+            finish()
         }
     }
 
@@ -67,7 +67,6 @@ class DetailsActivity : AppCompatActivity() {
             b.drawingView.isBlurMode = true
             b.drawingView.visibility = View.VISIBLE
             b.ivDraggableLogo.alpha = 0.5f 
-            Toast.makeText(this, "Draw on screen to blur", Toast.LENGTH_SHORT).show()
         }
         
         b.btnModeLogo.setOnClickListener {
@@ -78,9 +77,7 @@ class DetailsActivity : AppCompatActivity() {
                     b.ivDraggableLogo.visibility = View.VISIBLE
                     b.ivDraggableLogo.setImageURI(Uri.parse(uriStr))
                     b.ivDraggableLogo.alpha = 1.0f 
-                } else {
-                    Toast.makeText(this@DetailsActivity, "Please set a Logo in Settings first!", Toast.LENGTH_LONG).show()
-                }
+                } else Toast.makeText(this@DetailsActivity, "Set Logo in Settings!", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -95,10 +92,7 @@ class DetailsActivity : AppCompatActivity() {
 
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { 
-                val s = 0.5f + (p/100f)
-                b.ivDraggableLogo.scaleX = s
-                b.ivDraggableLogo.scaleY = s
-                logoScale = s 
+                val s = 0.5f + (p/100f); b.ivDraggableLogo.scaleX = s; b.ivDraggableLogo.scaleY = s; logoScale = s 
             }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
@@ -108,9 +102,7 @@ class DetailsActivity : AppCompatActivity() {
             lifecycleScope.launch { 
                 val t = b.etCaption.text.toString()
                 if (t.isNotEmpty()) {
-                    b.btnTranslate.text = "Translating..."
                     b.etCaption.setText(TranslationManager.translateToHebrew(t))
-                    b.btnTranslate.text = "🌐 Translate to HE"
                 }
             } 
         }
@@ -120,13 +112,7 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun sendData() {
-        // הגנה מפני קריסה בחישוב מידות
-        if (b.previewContainer.width == 0 || b.previewContainer.height == 0) {
-            Toast.makeText(this, "Wait for layout to load...", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        b.btnSend.text = "Processing..."
+        b.btnSend.text = "Sending..."
         b.btnSend.isEnabled = false
         
         lifecycleScope.launch(Dispatchers.IO) {
@@ -136,52 +122,56 @@ class DetailsActivity : AppCompatActivity() {
                 
                 if (target.isEmpty()) {
                     withContext(Dispatchers.Main) { 
-                        Toast.makeText(this@DetailsActivity, "No Target Channel defined in Settings!", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@DetailsActivity, "No Target Channel!", Toast.LENGTH_SHORT).show()
                         b.btnSend.isEnabled = true
-                        b.btnSend.text = "Send Now"
                     }
                     return@launch
                 }
 
-                // שימוש בנתיב התמונה הממוזערת כברירת מחדל אם המלא לא ירד
-                // (בפרודקשן צריך לחכות להורדה מלאה)
                 val inputPath = thumbPath ?: ""
-                if (inputPath.isEmpty() || !File(inputPath).exists()) {
-                     withContext(Dispatchers.Main) { Toast.makeText(this@DetailsActivity, "File not found locally. Try again later.", Toast.LENGTH_SHORT).show() }
-                     return@launch
-                }
-
-                val outExtension = if (isVideo) "mp4" else "jpg"
-                val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.$outExtension").absolutePath
-                val logoUri = repo.logoUri.first()?.let { Uri.parse(it) }
                 
-                val lX = b.ivDraggableLogo.x / b.previewContainer.width
-                val lY = b.ivDraggableLogo.y / b.previewContainer.height
+                // 1. אם זה טקסט בלבד (אין קובץ וזה לא וידאו)
+                if (inputPath.isEmpty() && !isVideo) {
+                    TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), null, false)
+                    withContext(Dispatchers.Main) { 
+                        Toast.makeText(this@DetailsActivity, "Text Sent!", Toast.LENGTH_SHORT).show()
+                        finish() 
+                    }
+                    return@launch
+                }
+                
+                // 2. אם יש מדיה (תמונה/וידאו)
+                if (File(inputPath).exists()) {
+                    val outExtension = if (isVideo) "mp4" else "jpg"
+                    val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.$outExtension").absolutePath
+                    val logoUri = repo.logoUri.first()?.let { Uri.parse(it) }
+                    
+                    val lX = if (b.previewContainer.width > 0) b.ivDraggableLogo.x / b.previewContainer.width else 0f
+                    val lY = if (b.previewContainer.height > 0) b.ivDraggableLogo.y / b.previewContainer.height else 0f
 
-                MediaProcessor.processContent(
-                    this@DetailsActivity, inputPath, outPath, isVideo, 
-                    b.drawingView.rects, logoUri, lX, lY, logoScale
-                ) { success ->
-                    if (success) {
-                        TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), outPath, isVideo)
-                        runOnUiThread { 
-                            Toast.makeText(this@DetailsActivity, "Sent successfully!", Toast.LENGTH_SHORT).show()
-                            finish() 
-                        }
-                    } else {
-                        runOnUiThread { 
-                            Toast.makeText(this@DetailsActivity, "Processing Failed.", Toast.LENGTH_SHORT).show()
-                            b.btnSend.isEnabled = true
-                            b.btnSend.text = "Try Again"
+                    MediaProcessor.processContent(
+                        this@DetailsActivity, inputPath, outPath, isVideo, 
+                        b.drawingView.rects, logoUri, lX, lY, logoScale
+                    ) { success ->
+                        if (success) {
+                            TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), outPath, isVideo)
+                            runOnUiThread { 
+                                Toast.makeText(this@DetailsActivity, "Sent!", Toast.LENGTH_SHORT).show()
+                                finish() 
+                            }
+                        } else {
+                            runOnUiThread { 
+                                Toast.makeText(this@DetailsActivity, "Processing Failed", Toast.LENGTH_SHORT).show()
+                                b.btnSend.isEnabled = true
+                            }
                         }
                     }
+                } else {
+                    withContext(Dispatchers.Main) { Toast.makeText(this@DetailsActivity, "Media file missing", Toast.LENGTH_SHORT).show(); b.btnSend.isEnabled = true }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@DetailsActivity, "Error sending: ${e.message}", Toast.LENGTH_LONG).show()
-                    b.btnSend.isEnabled = true
-                }
+                withContext(Dispatchers.Main) { b.btnSend.isEnabled = true }
             }
         }
     }

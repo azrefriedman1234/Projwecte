@@ -59,7 +59,6 @@ class MainActivity : AppCompatActivity() {
         b.btnVerifyPassword.setOnClickListener { TdLibManager.sendPassword(b.etPassword.text.toString()) }
 
         adapter = ChatAdapter(emptyList()) { msg ->
-            // לוגיקה חדשה: בדיקה לפני פתיחת מסך פרטים
             var thumbPath: String? = null
             var fullId = 0
             var isVideo = false
@@ -69,8 +68,8 @@ class MainActivity : AppCompatActivity() {
             when (msg.content) {
                 is TdApi.MessagePhoto -> {
                     val c = msg.content as TdApi.MessagePhoto
-                    thumbPath = c.photo.sizes.lastOrNull()?.photo?.local?.path // מנסים לקחת את הגדול ביותר
-                    if (thumbPath.isNullOrEmpty()) thumbPath = c.photo.sizes.firstOrNull()?.photo?.local?.path // אם אין, את הקטן
+                    thumbPath = c.photo.sizes.lastOrNull()?.photo?.local?.path
+                    if (thumbPath.isNullOrEmpty()) thumbPath = c.photo.sizes.firstOrNull()?.photo?.local?.path
                     fullId = if (c.photo.sizes.isNotEmpty()) c.photo.sizes.last().photo.id else 0
                     caption = c.caption.text
                     hasMedia = true
@@ -83,24 +82,23 @@ class MainActivity : AppCompatActivity() {
                     caption = c.caption.text
                     hasMedia = true
                 }
-                is TdApi.MessageText -> caption = (msg.content as TdApi.MessageText).text.text
+                is TdApi.MessageText -> {
+                    // טיפול בטקסט בלבד
+                    caption = (msg.content as TdApi.MessageText).text.text
+                    hasMedia = false
+                }
             }
 
-            // אם זו הודעת טקסט או שהקובץ לא ירד עדיין
-            if (!hasMedia) {
-                Toast.makeText(this, "This is a text message (No media)", Toast.LENGTH_SHORT).show()
-                return@ChatAdapter
-            }
-
-            // אם הנתיב ריק, סימן שהקובץ עוד לא ירד
-            if (thumbPath.isNullOrEmpty() || !File(thumbPath).exists()) {
-                Toast.makeText(this, "Media downloading... Try again in a second", Toast.LENGTH_SHORT).show()
-                TdLibManager.downloadFile(fullId) // מבקש הורדה דחופה
+            // אם יש מדיה אבל הקובץ לא ירד - מורידים וחוזרים
+            if (hasMedia && (thumbPath.isNullOrEmpty() || !File(thumbPath).exists())) {
+                Toast.makeText(this, "Media downloading... Try again shortly", Toast.LENGTH_SHORT).show()
+                TdLibManager.downloadFile(fullId)
                 return@ChatAdapter
             }
             
+            // פותחים תמיד, גם אם זה טקסט בלבד (thumbPath יהיה null)
             val intent = Intent(this, DetailsActivity::class.java)
-            intent.putExtra("THUMB_PATH", thumbPath)
+            if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
             intent.putExtra("FILE_ID", fullId)
             intent.putExtra("IS_VIDEO", isVideo)
             intent.putExtra("CAPTION", caption)
@@ -170,7 +168,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        
         lifecycleScope.launch {
             TdLibManager.currentMessages.collect { msgs ->
                 runOnUiThread { adapter.updateList(msgs) }
