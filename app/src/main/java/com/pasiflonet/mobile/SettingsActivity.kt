@@ -42,6 +42,8 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // --- מנגנון הגנה מפני קריסה ---
         try {
             b = ActivitySettingsBinding.inflate(layoutInflater)
             setContentView(b.root)
@@ -49,14 +51,18 @@ class SettingsActivity : AppCompatActivity() {
             updateCacheSize()
 
             lifecycleScope.launch {
-                val repo = DataStoreRepo(this@SettingsActivity)
-                val currentTarget = repo.targetUsername.first()
-                val currentLogo = repo.logoUri.first()
-                
-                if (!currentTarget.isNullOrEmpty()) b.etTargetUsername.setText(currentTarget)
-                
-                if (!currentLogo.isNullOrEmpty()) {
-                    try { b.ivCurrentLogo.setImageURI(Uri.parse(currentLogo)) } catch (e: Exception) {}
+                try {
+                    val repo = DataStoreRepo(this@SettingsActivity)
+                    val currentTarget = repo.targetUsername.first()
+                    val currentLogo = repo.logoUri.first()
+                    
+                    if (!currentTarget.isNullOrEmpty()) b.etTargetUsername.setText(currentTarget)
+                    
+                    if (!currentLogo.isNullOrEmpty()) {
+                        try { b.ivCurrentLogo.setImageURI(Uri.parse(currentLogo)) } catch (e: Exception) {}
+                    }
+                } catch (e: Exception) {
+                    // התעלמות משגיאות טעינת נתונים כדי שהמסך ייפתח בכל מקרה
                 }
             }
 
@@ -69,7 +75,7 @@ class SettingsActivity : AppCompatActivity() {
                         finish()
                     }
                 } else {
-                    Toast.makeText(this@SettingsActivity, "Please enter a channel username", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@SettingsActivity, "Enter channel name (e.g. @MyChannel)", Toast.LENGTH_SHORT).show()
                 }
             }
 
@@ -85,8 +91,9 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         } catch (e: Exception) {
-            // תופס כל קריסה ומציג הודעה במקום לקרוס
-            Toast.makeText(this, "Settings Error: ${e.message}", Toast.LENGTH_LONG).show()
+            // אם המסך קורס בטעינה, תפוס את השגיאה, הצג אותה למשתמש וסגור בעדינות
+            e.printStackTrace()
+            Toast.makeText(this, "Critical Error opening Settings: ${e.message}", Toast.LENGTH_LONG).show()
             finish()
         }
     }
