@@ -13,7 +13,6 @@ object TdLibManager {
     private var client: Client? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    // State Flows - הצינורות שמעבירים מידע למסך
     private val _authState = MutableStateFlow<TdApi.AuthorizationState?>(null)
     val authState: StateFlow<TdApi.AuthorizationState?> = _authState
 
@@ -23,7 +22,6 @@ object TdLibManager {
     private val _currentMessages = MutableStateFlow<List<TdApi.Message>>(emptyList())
     val currentMessages: StateFlow<List<TdApi.Message>> = _currentMessages
 
-    // מחסן נתונים זמני
     private val chatsMap = ConcurrentHashMap<Long, TdApi.Chat>()
     private val chatPositions = ConcurrentHashMap<Long, Long>()
 
@@ -40,11 +38,17 @@ object TdLibManager {
         when (update) {
             is TdApi.UpdateAuthorizationState -> {
                 _authState.value = update.authorizationState
-                if (update.authorizationState is TdApi.AuthorizationStateWaitTdlibParameters) {
-                    val dbDir = File(context.filesDir, "tdlib").absolutePath
-                    val filesDir = File(context.filesDir, "tdlib_files").absolutePath
-                    val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, apiId, apiHash, "en", "Android", "1.0", "1.0")
-                    client?.send(params, null)
+                when (update.authorizationState) {
+                    is TdApi.AuthorizationStateWaitTdlibParameters -> {
+                        val dbDir = File(context.filesDir, "tdlib").absolutePath
+                        val filesDir = File(context.filesDir, "tdlib_files").absolutePath
+                        val params = TdApi.SetTdlibParameters(false, dbDir, filesDir, null, true, true, true, true, apiId, apiHash, "en", "Android", "1.0", "1.0")
+                        client?.send(params, null)
+                    }
+                    is TdApi.AuthorizationStateReady -> {
+                        // התיקון הקריטי: בקשת טעינת צ'אטים מההיסטוריה ברגע שמתחברים
+                        client?.send(TdApi.LoadChats(null, 20), null)
+                    }
                 }
             }
             is TdApi.UpdateNewChat -> {
@@ -58,14 +62,12 @@ object TdLibManager {
                 }
             }
             is TdApi.UpdateChatLastMessage -> {
-                // הודעה חדשה ברשימת הצ'אטים
-                chatsMap[update.chatId]?.let { chat ->
-                    chat.lastMessage = update.lastMessage
+                chatsMap[update.chatId]?.let {
+                    it.lastMessage = update.lastMessage
                     refreshChatList()
                 }
             }
             is TdApi.UpdateNewMessage -> {
-                // הודעה חדשה בתוך צ'אט פתוח
                 val current = _currentMessages.value.toMutableList()
                 if (current.isNotEmpty() && current.first().chatId == update.message.chatId) {
                     current.add(0, update.message)
@@ -74,21 +76,19 @@ object TdLibManager {
             }
             is TdApi.UpdateFile -> {
                 if (update.file.local.isDownloadingCompleted) {
-                    _currentMessages.value = _currentMessages.value.toList() // Trigger UI refresh
+                    _currentMessages.value = _currentMessages.value.toList()
                 }
             }
         }
     }
 
     private fun refreshChatList() {
-        // מיון הצ'אטים לפי הזמן (הכי חדש למעלה)
         val sorted = chatsMap.values
             .filter { chatPositions.containsKey(it.id) }
             .sortedByDescending { chatPositions[it.id] }
         _chatList.value = sorted
     }
 
-    // פונקציות עזר
     fun sendPhone(phone: String) = client?.send(TdApi.SetAuthenticationPhoneNumber(phone, null), null)
     fun sendCode(code: String) = client?.send(TdApi.CheckAuthenticationCode(code), null)
     
