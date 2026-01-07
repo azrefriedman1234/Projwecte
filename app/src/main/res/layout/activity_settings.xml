@@ -13,7 +13,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Settings"
+            android:text="@string/settings_title"
             android:textColor="#FFFFFF"
             android:textSize="28sp"
             android:textStyle="bold"
@@ -22,7 +22,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Target Channel (Username)"
+            android:text="@string/target_channel_label"
             android:textColor="#AAAAAA"
             android:layout_marginBottom="5dp"/>
 
@@ -30,7 +30,7 @@
             android:id="@+id/etTargetUsername"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="@channel_name"
+            android:hint="@string/channel_hint"
             android:textColor="#FFFFFF"
             android:textColorHint="#666666"
             android:background="#333333"
@@ -40,7 +40,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Channel Logo"
+            android:text="@string/logo_label"
             android:textColor="#AAAAAA"
             android:layout_marginBottom="10dp"/>
 
@@ -62,7 +62,7 @@
                 android:id="@+id/btnSelectLogo"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Select Logo"
+                android:text="@string/select_logo"
                 android:layout_marginStart="20dp"/>
         </LinearLayout>
 
@@ -76,7 +76,7 @@
             android:id="@+id/btnClearCache"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="🗑️ Clear Cache"
+            android:text="@string/clear_cache"
             android:backgroundTint="#FF5252"
             android:layout_marginBottom="30dp"/>
 
@@ -84,7 +84,7 @@
             android:id="@+id/btnSaveSettings"
             android:layout_width="match_parent"
             android:layout_height="60dp"
-            android:text="SAVE SETTINGS"
+            android:text="@string/save_settings"
             android:backgroundTint="#4CAF50"
             android:textStyle="bold"/>
 
