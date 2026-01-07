@@ -33,7 +33,10 @@
             android:layout_width="100dp"
             android:layout_height="100dp"
             android:visibility="gone"
-            android:scaleType="fitCenter"/>
+            android:scaleType="fitCenter"
+            android:padding="5dp"
+            android:background="@drawable/logo_border"
+            android:contentDescription="Draggable Logo Area"/>
     </FrameLayout>
 
     <ScrollView

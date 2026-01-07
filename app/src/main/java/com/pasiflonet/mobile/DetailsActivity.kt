@@ -25,6 +25,8 @@ class DetailsActivity : AppCompatActivity() {
     private var isVideo = false
     private var fileId = 0
     private var logoScale = 1.0f
+    private var dX = 0f // משתנים לגרירה
+    private var dY = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -40,24 +42,18 @@ class DetailsActivity : AppCompatActivity() {
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
-            // שלב 1: הצגה מיידית של מה שיש (הכי מהר שאפשר)
             if (miniThumb != null && miniThumb.isNotEmpty()) {
                 b.ivPreview.load(miniThumb)
                 b.previewContainer.visibility = View.VISIBLE
             }
 
-            // שלב 2: שדרוג לאיכות גבוהה
             if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
-                // אם הקובץ האיכותי כבר כאן, נחליף אליו מיד
                 b.ivPreview.load(File(thumbPath!!))
                 b.previewContainer.visibility = View.VISIBLE
             } else if (!thumbPath.isNullOrEmpty()) {
-                // אם יש נתיב אבל הקובץ בדרך... נחכה לו ונחליף כשיגיע
-                // המיני-טאבנייל כבר מוצג, אז המשתמש לא רואה שחור
                 Toast.makeText(this, "Downloading High Quality...", Toast.LENGTH_SHORT).show()
                 waitForThumbnail(thumbPath!!)
             } else if (miniThumb == null) {
-                // רק אם אין גם וגם
                 Toast.makeText(this, "Loading...", Toast.LENGTH_SHORT).show()
             }
             
@@ -72,7 +68,6 @@ class DetailsActivity : AppCompatActivity() {
             var attempts = 0
             while (attempts < 20) {
                 if (File(path).exists()) {
-                    // ברגע שההורדה מסתיימת - מחליפים לתמונה החדה
                     b.ivPreview.load(File(path))
                     break
                 }
@@ -94,19 +89,40 @@ class DetailsActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 try {
                     val uriStr = DataStoreRepo(this@DetailsActivity).logoUri.first()
+                    
+                    // תמיד מציגים את האלמנט הנגרר (בזכות המסגרת החדשה)
+                    b.ivDraggableLogo.visibility = View.VISIBLE
+                    b.ivDraggableLogo.alpha = 1.0f
+                    
                     if (uriStr != null) { 
-                        b.ivDraggableLogo.visibility = View.VISIBLE
+                        // אם יש לוגו מוגדר - טוענים אותו
                         b.ivDraggableLogo.load(Uri.parse(uriStr))
-                        b.ivDraggableLogo.alpha = 1.0f 
-                    } else Toast.makeText(this@DetailsActivity, "Set Logo in Settings first!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        // אם אין לוגו - טוענים אייקון ברירת מחדל של מערכת אנדרואיד
+                        Toast.makeText(this@DetailsActivity, "No Logo Set. Using placeholder.", Toast.LENGTH_SHORT).show()
+                        b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery) {
+                            tint(android.graphics.Color.WHITE) // צובעים ללבן שיראו טוב
+                        }
+                    }
                 } catch (e: Exception) { }
             }
         }
 
+        // לוגיקת הגרירה (הוספתי את חישוב dX/dY שחזר להיות רלוונטי)
         b.ivDraggableLogo.setOnTouchListener { view, event ->
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
             when (event.action) {
-                android.view.MotionEvent.ACTION_MOVE -> { view.animate().x(event.rawX - view.width/2).y(event.rawY - view.height/2).setDuration(0).start() }
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    dX = view.x - event.rawX
+                    dY = view.y - event.rawY
+                }
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    view.animate()
+                        .x(event.rawX + dX)
+                        .y(event.rawY + dY)
+                        .setDuration(0)
+                        .start()
+                }
             }
             true
         }
@@ -127,7 +143,11 @@ class DetailsActivity : AppCompatActivity() {
             val repo = DataStoreRepo(this@DetailsActivity)
             val target = repo.targetUsername.first() ?: ""
             if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Set Target Channel!", Toast.LENGTH_SHORT).show(); return@launch }
-            val logoUri = repo.logoUri.first()?.let { Uri.parse(it) }
+            
+            // אם לא הוגדר לוגו, לא שולחים את ה-URI של ה-placeholder
+            val logoUriStr = repo.logoUri.first()
+            val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
+
             val lX = if (b.previewContainer.width > 0) b.ivDraggableLogo.x / b.previewContainer.width else 0f
             val lY = if (b.previewContainer.height > 0) b.ivDraggableLogo.y / b.previewContainer.height else 0f
             
