@@ -20,7 +20,6 @@ object MediaProcessor {
         }
     }
 
-    // פונקציית עזר קריטית: הופכת מספרים לפורמט אמריקאי (0.5 ולא 0,5)
     private fun fmt(value: Float): String {
         return String.format(Locale.US, "%.4f", value)
     }
@@ -77,17 +76,17 @@ object MediaProcessor {
         val filter = StringBuilder()
         var currentStream = "[0:v]"
         
-        // תיקון: שימוש ב-fmt() כדי למנוע פסיקים במספרים
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             
-            // חישוב המידות בפורמט תקין
-            val w = "iw*${fmt(r.right-r.left)}"
-            val h = "ih*${fmt(r.bottom-r.top)}"
-            val x = "iw*${fmt(r.left)}"
-            val y = "ih*${fmt(r.top)}"
+            // שימוש ב-trunc() כדי למנוע שגיאות של חצאי פיקסלים (למשל 100.5 פיקסלים)
+            val w = "trunc(iw*${fmt(r.right-r.left)})"
+            val h = "trunc(ih*${fmt(r.bottom-r.top)})"
+            val x = "trunc(iw*${fmt(r.left)})"
+            val y = "trunc(ih*${fmt(r.top)})"
             
-            filter.append("$currentStream split=2[main][tocrop];[tocrop]crop=$w:$h:$x:$y,boxblur=10:1[blurred];[main][blurred]overlay=$x:$y $nextStream;")
+            // הסרנו את הרווח לפני $nextStream - זה היה גורם לשגיאה!
+            filter.append("$currentStream split=2[main][tocrop];[tocrop]crop=$w:$h:$x:$y,boxblur=10:1[blurred];[main][blurred]overlay=$x:$y$nextStream;")
             currentStream = nextStream
         }
 
@@ -96,10 +95,11 @@ object MediaProcessor {
             val lx = fmt(lX)
             val ly = fmt(lY)
             
-            filter.append("[1:v]scale=iw*$s:-1[logo];")
-            filter.append("$currentStream[logo]overlay=x=W*$lx:y=H*$ly[v_done]")
+            // גם כאן, הסרת רווחים ושימוש ב-trunc למיקומים
+            filter.append("[1:v]scale=trunc(iw*$s):-1[logo];")
+            filter.append("$currentStream[logo]overlay=x=trunc(W*$lx):y=trunc(H*$ly)[v_done]")
         } else {
-            filter.append("${currentStream}scale=iw:ih[v_done]")
+            filter.append("${currentStream}scale=trunc(iw):trunc(ih)[v_done]")
         }
 
         args.add("-filter_complex"); args.add(filter.toString())
