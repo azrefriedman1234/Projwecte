@@ -32,18 +32,27 @@ class DetailsActivity : AppCompatActivity() {
             setContentView(b.root)
 
             thumbPath = intent.getStringExtra("THUMB_PATH")
+            val miniThumb = intent.getByteArrayExtra("MINI_THUMB") // קבלת הגיבוי
+            
             fileId = intent.getIntExtra("FILE_ID", 0)
             isVideo = intent.getBooleanExtra("IS_VIDEO", false)
             val caption = intent.getStringExtra("CAPTION") ?: ""
             b.etCaption.setText(caption)
 
-            // טעינת תמונה: מציג את הנתיב שהתקבל (עכשיו הוא האיכותי ביותר)
+            // לוגיקה משולבת: איכות גבוהה -> איכות נמוכה -> טעינה
             if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
+                // יש קובץ מקומי איכותי
                 b.ivPreview.load(File(thumbPath!!))
                 b.previewContainer.visibility = View.VISIBLE
+            } else if (miniThumb != null && miniThumb.isNotEmpty()) {
+                // אין קובץ, אבל יש Mini Thumbnail בזיכרון (מיידי!)
+                b.ivPreview.load(miniThumb)
+                b.previewContainer.visibility = View.VISIBLE
+                if (fileId != 0) Toast.makeText(this, "Loading High Quality...", Toast.LENGTH_SHORT).show()
             } else if (fileId != 0) {
+                 // אין כלום, מחכים להורדה
                  b.previewContainer.visibility = View.VISIBLE
-                 Toast.makeText(this, "Downloading Full Quality...", Toast.LENGTH_SHORT).show()
+                 Toast.makeText(this, "Downloading...", Toast.LENGTH_SHORT).show()
             } else {
                 b.previewContainer.visibility = View.INVISIBLE
                 disableVisualTools()
@@ -67,14 +76,11 @@ class DetailsActivity : AppCompatActivity() {
                 try {
                     val uriStr = DataStoreRepo(this@DetailsActivity).logoUri.first()
                     if (uriStr != null) { 
-                        // טעינה מוגנת של הלוגו
                         b.ivDraggableLogo.visibility = View.VISIBLE
                         b.ivDraggableLogo.setImageURI(Uri.parse(uriStr))
                         b.ivDraggableLogo.alpha = 1.0f 
                     } else Toast.makeText(this@DetailsActivity, "Set Logo in Settings!", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    Toast.makeText(this@DetailsActivity, "Error loading logo: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
+                } catch (e: Exception) { }
             }
         }
 
