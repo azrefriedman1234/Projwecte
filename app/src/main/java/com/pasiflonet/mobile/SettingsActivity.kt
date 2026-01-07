@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.pasiflonet.mobile.databinding.ActivitySettingsBinding
+import com.pasiflonet.mobile.utils.CacheManager
 import com.pasiflonet.mobile.utils.DataStoreRepo
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -27,6 +28,8 @@ class SettingsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivitySettingsBinding.inflate(layoutInflater)
         setContentView(b.root)
+
+        updateCacheSize()
 
         lifecycleScope.launch {
             val repo = DataStoreRepo(this@SettingsActivity)
@@ -50,9 +53,22 @@ class SettingsActivity : AppCompatActivity() {
 
         b.btnSelectLogo.setOnClickListener { pickLogo.launch("image/*") }
         
+        // כפתור הניקוי המשודרג
         b.btnClearCache.setOnClickListener {
-            cacheDir.deleteRecursively()
-            Toast.makeText(this, "Cache Cleared", Toast.LENGTH_SHORT).show()
+            lifecycleScope.launch {
+                b.btnClearCache.text = "Cleaning..."
+                b.btnClearCache.isEnabled = false
+                
+                CacheManager.clearAppCache(this@SettingsActivity)
+                
+                updateCacheSize()
+                b.btnClearCache.isEnabled = true
+            }
         }
+    }
+
+    private fun updateCacheSize() {
+        val size = CacheManager.getCacheSize(this)
+        b.btnClearCache.text = "🗑️ Clear Cache (Current: $size)"
     }
 }

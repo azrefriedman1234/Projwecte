@@ -42,40 +42,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
-        // כפתור שליחת טלפון - עם טיפול בשגיאות
-        b.btnSendCode.setOnClickListener {
-            val phone = b.etPhone.text.toString()
-            if (phone.isEmpty()) { Toast.makeText(this, "Enter phone number", Toast.LENGTH_SHORT).show(); return@setOnClickListener }
-            
-            b.btnSendCode.isEnabled = false
-            b.btnSendCode.text = "Sending..."
-            
-            TdLibManager.sendPhone(phone) { errorMsg ->
-                runOnUiThread {
-                    b.btnSendCode.isEnabled = true
-                    b.btnSendCode.text = "SEND CODE"
-                    Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show() // הצגת השגיאה!
-                }
-            }
+        b.btnSendCode.setOnClickListener { 
+            val p = b.etPhone.text.toString(); if(p.isEmpty()) return@setOnClickListener
+            b.btnSendCode.text="Sending..."; b.btnSendCode.isEnabled=false
+            TdLibManager.sendPhone(p) { e -> runOnUiThread { b.btnSendCode.isEnabled=true; b.btnSendCode.text="SEND CODE"; Toast.makeText(this,e,Toast.LENGTH_LONG).show() } }
         }
-
-        // כפתור אימות קוד - עם טיפול בשגיאות
-        b.btnVerify.setOnClickListener { 
-            val code = b.etCode.text.toString()
-            if (code.isEmpty()) return@setOnClickListener
-            
-            TdLibManager.sendCode(code) { errorMsg ->
-                runOnUiThread { Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show() }
-            }
-        }
-
-        b.btnVerifyPassword.setOnClickListener { 
-             val pass = b.etPassword.text.toString()
-             TdLibManager.sendPassword(pass) { errorMsg ->
-                runOnUiThread { Toast.makeText(this, errorMsg, Toast.LENGTH_LONG).show() }
-            }
-        }
+        b.btnVerify.setOnClickListener { val c=b.etCode.text.toString(); if(c.isNotEmpty()) TdLibManager.sendCode(c) { e->runOnUiThread{Toast.makeText(this,e,Toast.LENGTH_LONG).show()}} }
+        b.btnVerifyPassword.setOnClickListener { val pa=b.etPassword.text.toString(); TdLibManager.sendPassword(pa) { e->runOnUiThread{Toast.makeText(this,e,Toast.LENGTH_LONG).show()}} }
 
         adapter = ChatAdapter(emptyList()) { msg ->
             var thumbPath: String? = null
@@ -101,7 +74,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             if (fullId != 0) TdLibManager.downloadFile(fullId)
-            
             val intent = Intent(this, DetailsActivity::class.java)
             if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
             intent.putExtra("FILE_ID", fullId)
@@ -112,61 +84,19 @@ class MainActivity : AppCompatActivity() {
         
         b.rvMessages.layoutManager = LinearLayoutManager(this)
         b.rvMessages.adapter = adapter
-        b.btnClearCache.setOnClickListener { CacheManager.clearAppCache(this) }
-        b.btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
-    }
-
-    private fun checkApiAndInit() { 
-        lifecycleScope.launch {
-            val repo = DataStoreRepo(this@MainActivity)
-            val apiId = repo.apiId.first()
-            val apiHash = repo.apiHash.first()
-            if (apiId != null && apiHash != null) {
-                b.apiContainer.visibility = View.GONE
-                TdLibManager.init(this@MainActivity, apiId, apiHash)
-                observeAuth()
-            } else { b.apiContainer.visibility = View.VISIBLE; b.mainContent.visibility = View.GONE }
-        }
-    }
-    
-    private fun observeAuth() {
-         lifecycleScope.launch {
-            TdLibManager.authState.collect { state ->
-                runOnUiThread {
-                    // עדכון ה-UI לפי המצב הנוכחי
-                    if (state is TdApi.AuthorizationStateWaitPhoneNumber) {
-                        b.apiContainer.visibility = View.GONE
-                        b.loginContainer.visibility = View.VISIBLE
-                        b.phoneLayout.visibility = View.VISIBLE
-                        b.codeLayout.visibility = View.GONE
-                        b.passwordLayout.visibility = View.GONE
-                        
-                        // איפוס הכפתור למקרה שנתקע
-                        b.btnSendCode.isEnabled = true
-                        b.btnSendCode.text = "SEND CODE"
-                    }
-                    else if (state is TdApi.AuthorizationStateWaitCode) {
-                        b.loginContainer.visibility = View.VISIBLE
-                        b.phoneLayout.visibility = View.GONE
-                        b.codeLayout.visibility = View.VISIBLE
-                    }
-                    else if (state is TdApi.AuthorizationStateWaitPassword) {
-                        b.loginContainer.visibility = View.VISIBLE
-                        b.codeLayout.visibility = View.GONE
-                        b.passwordLayout.visibility = View.VISIBLE
-                    }
-                    else if (state is TdApi.AuthorizationStateReady) {
-                        b.loginContainer.visibility = View.GONE
-                        b.mainContent.visibility = View.VISIBLE
-                    }
-                }
+        
+        // חיבור כפתור המטאטא ללוגיקת הניקוי
+        b.btnClearCache.setOnClickListener { 
+            lifecycleScope.launch { 
+                CacheManager.clearAppCache(this@MainActivity) 
             }
         }
-        lifecycleScope.launch { TdLibManager.currentMessages.collect { msgs -> runOnUiThread { adapter.updateList(msgs) } } }
+        
+        b.btnSettings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
     }
     
-    private fun checkPermissions() {
-         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO))
-        else requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE))
-    }
+    // (יתר הפונקציות ללא שינוי, אבל נדרשות לקומפילציה)
+    private fun checkApiAndInit() { lifecycleScope.launch { val r=DataStoreRepo(this@MainActivity); val i=r.apiId.first(); val h=r.apiHash.first(); if(i!=null&&h!=null){ b.apiContainer.visibility=View.GONE; TdLibManager.init(this@MainActivity,i,h); observeAuth() } else { b.apiContainer.visibility=View.VISIBLE; b.mainContent.visibility=View.GONE } } }
+    private fun observeAuth() { lifecycleScope.launch { TdLibManager.authState.collect { s -> runOnUiThread { if(s is TdApi.AuthorizationStateWaitPhoneNumber){ b.apiContainer.visibility=View.GONE; b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.GONE; b.btnSendCode.isEnabled=true; b.btnSendCode.text="SEND CODE" } else if(s is TdApi.AuthorizationStateWaitCode){ b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.GONE; b.codeLayout.visibility=View.VISIBLE } else if(s is TdApi.AuthorizationStateWaitPassword){ b.loginContainer.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.VISIBLE } else if(s is TdApi.AuthorizationStateReady){ b.loginContainer.visibility=View.GONE; b.mainContent.visibility=View.VISIBLE } } } }; lifecycleScope.launch { TdLibManager.currentMessages.collect { m -> runOnUiThread { adapter.updateList(m) } } } }
+    private fun checkPermissions() { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)) else requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE)) }
 }
