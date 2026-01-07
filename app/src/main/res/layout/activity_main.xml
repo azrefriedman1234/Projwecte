@@ -14,15 +14,7 @@
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="API Configuration"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="16dp"/>
-
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="API Config" android:textStyle="bold" android:textSize="18sp" />
         <EditText android:id="@+id/etApiId" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API ID" android:inputType="number" />
         <EditText android:id="@+id/etApiHash" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="API Hash" />
         <Button android:id="@+id/btnSaveApi" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Save API" />
@@ -37,31 +29,12 @@
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintBottom_toBottomOf="parent">
-
-        <TextView
-            android:id="@+id/tvStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Status"
-            android:textColor="@color/telegram_blue"
-            android:gravity="center"
-            android:layout_marginBottom="16dp" />
-
-        <LinearLayout
-            android:id="@+id/phoneLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
+        <TextView android:id="@+id/tvStatus" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:textColor="#0088CC" android:text="Status" />
+        <LinearLayout android:id="@+id/phoneLayout" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
             <EditText android:id="@+id/etPhone" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Phone" android:inputType="phone" />
             <Button android:id="@+id/btnSendCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Send Code" />
         </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/codeLayout"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone">
+        <LinearLayout android:id="@+id/codeLayout" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
             <EditText android:id="@+id/etCode" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Code" android:inputType="number" />
             <Button android:id="@+id/btnVerify" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Verify" />
         </LinearLayout>
@@ -78,7 +51,7 @@
     <Button
         android:id="@+id/btnSettings"
         android:layout_width="match_parent"
-        android:layout_height="60dp"
+        android:layout_height="64dp"
         android:text="Settings / Watermark"
         android:visibility="gone"
         app:layout_constraintBottom_toBottomOf="parent" />
