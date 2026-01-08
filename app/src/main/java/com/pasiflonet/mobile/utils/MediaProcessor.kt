@@ -53,18 +53,20 @@ object MediaProcessor {
         isVideo: Boolean,
         rects: List<BlurRect>,
         logoUri: Uri?,
-        lX: Float, lY: Float, lRelWidth: Float, // פרמטר חדש: רוחב יחסי
+        lX: Float, lY: Float, lRelWidth: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        // ... (אותו קוד העתקה כמו קודם)
         val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
-        val finalOutput = if(outputPath.endsWith("out.mp4")) File(context.cacheDir, "final_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath else outputPath
-
+        
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
         catch (e: Exception) { onComplete(false); return }
 
+        // אם אין עריכה - פשוט מעתיקים ומודיעים שהכל מוכן
         if (rects.isEmpty() && logoUri == null) {
-            try { safeInput.copyTo(File(finalOutput), overwrite = true); TdLibManager.sendFinalMessage(com.pasiflonet.mobile.utils.TdLibManager.lastTarget, com.pasiflonet.mobile.utils.TdLibManager.lastCaption, finalOutput, isVideo); onComplete(true) } catch (e: Exception) { onComplete(false) }
+            try { 
+                safeInput.copyTo(File(outputPath), overwrite = true)
+                onComplete(true) 
+            } catch (e: Exception) { onComplete(false) }
             return
         }
 
@@ -95,7 +97,6 @@ object MediaProcessor {
         val filter = StringBuilder()
         var currentStream = "[0:v]"
         
-        // --- Blur Loop (Scale method) ---
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
@@ -112,30 +113,20 @@ object MediaProcessor {
                 wStr = pixelW.toString(); hStr = pixelH.toString(); xStr = pixelX.toString(); yStr = pixelY.toString()
             }
             
+            // Blur by scaling down and up
             filter.append("$currentStream split=2[$splitName][$cropName];")
             filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=iw/15:-1,scale=$wStr:$hStr[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream;")
             currentStream = nextStream
         }
 
-        // --- Logo Loop (Fixed Sizing) ---
         if (logoPath != null) {
-            // כאן התיקון הגדול: אנו מחשבים את גודל הלוגו ביחס לוידאו
-            // אם הלוגו תופס 20% מהמסך -> הוא יתפוס 20% מרוחב הוידאו
             var targetLogoW = (width * lRelWidth).toInt()
-            if (targetLogoW % 2 != 0) targetLogoW-- // זוגיות
-            if (targetLogoW < 10) targetLogoW = 10 // מינימום
+            if (targetLogoW % 2 != 0) targetLogoW--
+            if (targetLogoW < 10) targetLogoW = 10 
 
-            // מיקום מבוסס Bias (מרכז לוגו)
-            // אנו צריכים להמיר מרכז (Bias) לקואורדינטת X/Y של הפינה השמאלית עליונה
-            // X = (VideoWidth - LogoWidth) * BiasX
-            // Y = (VideoHeight - LogoHeight) * BiasY
-            // אבל מכיוון שאנחנו לא יודעים את גובה הלוגו עדיין (הוא יחסי), נשתמש בטריק של overlay
-            
-            // נשנה את גודל הלוגו לגודל המחושב
             filter.append("[1:v]scale=$targetLogoW:-1[logo];")
             
-            // נמקם אותו. ב-FFmpeg: x=(W-w)*BiasX
             val bx = fmt(lX)
             val by = fmt(lY)
             filter.append("$currentStream[logo]overlay=x=(W-w)*$bx:y=(H-h)*$by[v_done]")
@@ -151,14 +142,11 @@ object MediaProcessor {
         } else {
             args.add("-q:v"); args.add("5")
         }
-        args.add(finalOutput)
+        args.add(outputPath)
 
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
             if (ReturnCode.isSuccess(session.returnCode)) {
-                // Sending handled here via specific callback or specialized method in TdLibManager
-                // For this script context, we assume TdLibManager handles the file path
-                 TdLibManager.sendFinalMessage(com.pasiflonet.mobile.utils.TdLibManager.lastTarget, com.pasiflonet.mobile.utils.TdLibManager.lastCaption, finalOutput, isVideo)
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
