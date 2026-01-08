@@ -2,193 +2,184 @@
 <androidx.constraintlayout.widget.ConstraintLayout 
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#121212">
-
-    <androidx.constraintlayout.widget.Guideline
-        android:id="@+id/guideline"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        app:layout_constraintGuide_percent="0.5" />
+    android:background="@color/cyber_bg">
 
     <FrameLayout
-        android:id="@+id/mediaContainer"
-        android:layout_width="0dp"
+        android:id="@+id/previewContainer"
+        android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:background="#000000"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toStartOf="@id/guideline"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
+        android:background="#E2E8F0"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/controlsCard">
 
         <ImageView
             android:id="@+id/ivPreview"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:adjustViewBounds="true"
-            android:scaleType="fitCenter"
-            tools:src="@tools:sample/backgrounds/scenic" />
-
+            android:scaleType="fitCenter" />
+            
         <com.pasiflonet.mobile.utils.DrawingView
             android:id="@+id/drawingView"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:visibility="gone" />
+            android:visibility="gone"/>
 
         <ImageView
             android:id="@+id/ivDraggableLogo"
             android:layout_width="100dp"
-            android:layout_height="wrap_content"
-            android:adjustViewBounds="true"
-            android:scaleType="fitStart"
-            android:src="@android:drawable/ic_menu_gallery"
-            android:visibility="gone" />
+            android:layout_height="100dp"
+            android:visibility="gone"
+            android:src="@android:drawable/ic_menu_gallery"/>
             
         <View
             android:id="@+id/vDisabledOverlay"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:background="#DD000000"
-            android:visibility="gone" />
+            android:background="#80F4F7FB"
+            android:visibility="gone"/>
             
         <TextView
             android:id="@+id/tvTextOnlyLabel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
             android:text="TEXT ONLY MODE"
-            android:textColor="#FFFFFF"
             android:textSize="24sp"
             android:textStyle="bold"
-            android:visibility="gone" />
+            android:textColor="@color/text_secondary"
+            android:layout_gravity="center"
+            android:visibility="gone"/>
     </FrameLayout>
 
-    <ScrollView
-        android:id="@+id/toolsScroll"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:background="#202020"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@id/guideline"
-        app:layout_constraintTop_toTopOf="parent">
+    <androidx.cardview.widget.CardView
+        android:id="@+id/controlsCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardElevation="16dp"
+        app:cardCornerRadius="24dp"
+        app:cardBackgroundColor="@color/white"
+        app:layout_constraintBottom_toBottomOf="parent">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="16dp">
+            android:padding="24dp">
             
-            <TextView
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Editing Tools"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:textStyle="bold"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="16dp">
+                
+                <Switch
+                    android:id="@+id/swIncludeMedia"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:thumbTint="@color/cyber_primary"/>
+                <TextView
+                    android:text="Include Media"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:layout_marginStart="12dp"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/mediaToolsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:weightSum="2"
+                android:layout_marginBottom="16dp">
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnModeBlur"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="50dp"
+                    android:text="BLUR"
+                    android:background="@drawable/bg_cyber_input"
+                    android:layout_marginEnd="8dp"/>
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnModeLogo"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="50dp"
+                    android:text="LOGO"
+                    android:background="@drawable/bg_cyber_input"
+                    android:layout_marginStart="8dp"/>
+            </LinearLayout>
+            
+            <SeekBar
+                android:id="@+id/sbLogoSize"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:progress="50"
+                android:max="100"
                 android:layout_marginBottom="16dp"/>
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:layout_marginBottom="16dp">
-                <Switch
-                    android:id="@+id/swIncludeMedia"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:checked="true"
-                    android:text="Include Media"
-                    android:textColor="#FFF"
-                    android:textSize="16sp"/>
-            </LinearLayout>
-
-            <EditText
-                android:id="@+id/etCaption"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:minLines="3"
-                android:gravity="top|start"
-                android:backgroundTint="#444"
-                android:hint="Caption..."
-                android:textColor="#FFF"
-                android:textColorHint="#666" />
+                android:layout_marginBottom="24dp">
                 
-            <Button
-                android:id="@+id/btnTranslate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Translate (文A)"
-                android:layout_marginTop="8dp"
-                android:backgroundTint="#555" />
-
-            <LinearLayout
-                android:id="@+id/mediaToolsContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
-                android:orientation="vertical">
-                
-                <LinearLayout
-                    android:layout_width="match_parent"
+                <EditText
+                    android:id="@+id/etCaption"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-                    <Button
-                        android:id="@+id/btnModeBlur"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="Blur"
-                        android:backgroundTint="#FF9800" />
-                    <Space android:layout_width="8dp" android:layout_height="1dp"/>
-                    <Button
-                        android:id="@+id/btnModeLogo"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="Logo"
-                        android:backgroundTint="#607D8B" />
-                </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Logo Size"
-                    android:textColor="#AAA"
-                    android:layout_marginTop="12dp"/>
-                <SeekBar
-                    android:id="@+id/sbLogoSize"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:max="200"
-                    android:progress="50" />
+                    android:hint="Caption..."
+                    android:background="@drawable/bg_cyber_input"
+                    android:padding="12dp"
+                    android:minHeight="50dp"/>
+                    
+                <ImageView
+                    android:id="@+id/btnTranslate"
+                    android:layout_width="50dp"
+                    android:layout_height="50dp"
+                    android:src="@android:drawable/ic_menu_sort_by_size"
+                    android:background="@drawable/bg_cyber_button"
+                    android:padding="12dp"
+                    android:layout_marginStart="8dp"
+                    app:tint="@color/white"/>
             </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="32dp"
-                android:orientation="vertical">
-                <Button
-                    android:id="@+id/btnSend"
-                    android:layout_width="match_parent"
-                    android:layout_height="60dp"
-                    android:backgroundTint="#2196F3"
-                    android:text="SEND"
-                    android:textSize="18sp"
-                    android:textStyle="bold"/>
-                <Button
+                android:orientation="horizontal">
+
+                <androidx.appcompat.widget.AppCompatButton
                     android:id="@+id/btnCancel"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:backgroundTint="#D32F2F"
-                    android:text="Cancel" />
+                    android:layout_width="0dp"
+                    android:layout_weight="0.3"
+                    android:layout_height="60dp"
+                    android:text="X"
+                    android:textSize="20sp"
+                    android:textStyle="bold"
+                    android:textColor="#FF5252"
+                    android:background="@drawable/bg_cyber_input"
+                    android:layout_marginEnd="12dp"/>
+
+                <androidx.appcompat.widget.AppCompatButton
+                    android:id="@+id/btnSend"
+                    android:layout_width="0dp"
+                    android:layout_weight="0.7"
+                    android:layout_height="60dp"
+                    android:text="SEND SECURELY"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/white"
+                    android:background="@drawable/bg_cyber_button"/>
             </LinearLayout>
+
         </LinearLayout>
-    </ScrollView>
+    </androidx.cardview.widget.CardView>
+
 </androidx.constraintlayout.widget.ConstraintLayout>
