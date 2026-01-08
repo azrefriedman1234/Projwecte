@@ -66,10 +66,38 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintTop_toTopOf="parent">
         
-        <TextView android:text="API Configuration" android:textSize="20sp" android:textStyle="bold" android:layout_marginBottom="16dp"/>
-        <EditText android:id="@+id/etApiId" android:hint="API ID" android:inputType="number" android:background="@null" android:padding="12dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="16dp"/>
-        <View android:layout_width="match_parent" android:layout_height="1dp" android:background="#E2E8F0" android:layout_marginBottom="16dp"/>
-        <EditText android:id="@+id/etApiHash" android:hint="API Hash" android:background="@null" android:padding="12dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="24dp"/>
+        <TextView 
+            android:layout_width="match_parent" 
+            android:layout_height="wrap_content" 
+            android:text="API Configuration" 
+            android:textSize="20sp" 
+            android:textStyle="bold" 
+            android:layout_marginBottom="16dp"/>
+
+        <EditText 
+            android:id="@+id/etApiId" 
+            android:layout_width="match_parent" 
+            android:layout_height="wrap_content" 
+            android:hint="API ID" 
+            android:inputType="number" 
+            android:background="@null" 
+            android:padding="12dp" 
+            android:layout_marginBottom="16dp"/>
+            
+        <View 
+            android:layout_width="match_parent" 
+            android:layout_height="1dp" 
+            android:background="#E2E8F0" 
+            android:layout_marginBottom="16dp"/>
+            
+        <EditText 
+            android:id="@+id/etApiHash" 
+            android:layout_width="match_parent" 
+            android:layout_height="wrap_content" 
+            android:hint="API Hash" 
+            android:background="@null" 
+            android:padding="12dp" 
+            android:layout_marginBottom="24dp"/>
         
         <androidx.appcompat.widget.AppCompatButton
             android:id="@+id/btnSaveApi"
@@ -94,21 +122,93 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintTop_toTopOf="parent">
         
-        <TextView android:text="Secure Login" android:textSize="24sp" android:textColor="@color/cyber_secondary" android:textStyle="bold" android:layout_gravity="center" android:layout_marginBottom="32dp"/>
+        <TextView 
+            android:layout_width="match_parent" 
+            android:layout_height="wrap_content" 
+            android:text="Secure Login" 
+            android:textSize="24sp" 
+            android:textColor="@color/cyber_secondary" 
+            android:textStyle="bold" 
+            android:gravity="center" 
+            android:layout_marginBottom="32dp"/>
 
-        <LinearLayout android:id="@+id/phoneLayout" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-            <EditText android:id="@+id/etPhone" android:hint="+972..." android:background="@drawable/bg_cyber_input" android:padding="16dp" android:textSize="18sp" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="24dp"/>
-            <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnSendCode" android:layout_width="match_parent" android:layout_height="60dp" android:text="SEND VERIFICATION CODE" android:textColor="@color/white" android:background="@drawable/bg_cyber_button"/>
+        <LinearLayout 
+            android:id="@+id/phoneLayout" 
+            android:layout_width="match_parent" 
+            android:layout_height="wrap_content" 
+            android:orientation="vertical">
+            
+            <EditText 
+                android:id="@+id/etPhone" 
+                android:layout_width="match_parent" 
+                android:layout_height="wrap_content" 
+                android:hint="+972..." 
+                android:background="@drawable/bg_cyber_input" 
+                android:padding="16dp" 
+                android:textSize="18sp" 
+                android:layout_marginBottom="24dp"/>
+                
+            <androidx.appcompat.widget.AppCompatButton 
+                android:id="@+id/btnSendCode" 
+                android:layout_width="match_parent" 
+                android:layout_height="60dp" 
+                android:text="SEND VERIFICATION CODE" 
+                android:textColor="@color/white" 
+                android:background="@drawable/bg_cyber_button"/>
         </LinearLayout>
 
-        <LinearLayout android:id="@+id/codeLayout" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
-            <EditText android:id="@+id/etCode" android:hint="12345" android:gravity="center" android:letterSpacing="0.3" android:textSize="24sp" android:background="@drawable/bg_cyber_input" android:padding="16dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="24dp"/>
-            <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnVerify" android:layout_width="match_parent" android:layout_height="60dp" android:text="VERIFY IDENTITY" android:textColor="@color/white" android:background="@drawable/bg_cyber_button"/>
+        <LinearLayout 
+            android:id="@+id/codeLayout" 
+            android:layout_width="match_parent" 
+            android:layout_height="wrap_content" 
+            android:orientation="vertical" 
+            android:visibility="gone">
+            
+            <EditText 
+                android:id="@+id/etCode" 
+                android:layout_width="match_parent" 
+                android:layout_height="wrap_content" 
+                android:hint="12345" 
+                android:gravity="center" 
+                android:letterSpacing="0.3" 
+                android:textSize="24sp" 
+                android:background="@drawable/bg_cyber_input" 
+                android:padding="16dp" 
+                android:layout_marginBottom="24dp"/>
+                
+            <androidx.appcompat.widget.AppCompatButton 
+                android:id="@+id/btnVerify" 
+                android:layout_width="match_parent" 
+                android:layout_height="60dp" 
+                android:text="VERIFY IDENTITY" 
+                android:textColor="@color/white" 
+                android:background="@drawable/bg_cyber_button"/>
         </LinearLayout>
 
-        <LinearLayout android:id="@+id/passwordLayout" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:visibility="gone">
-            <EditText android:id="@+id/etPassword" android:hint="2FA Password" android:inputType="textPassword" android:background="@drawable/bg_cyber_input" android:padding="16dp" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="24dp"/>
-            <androidx.appcompat.widget.AppCompatButton android:id="@+id/btnVerifyPassword" android:layout_width="match_parent" android:layout_height="60dp" android:text="UNLOCK" android:textColor="@color/white" android:background="@drawable/bg_cyber_button"/>
+        <LinearLayout 
+            android:id="@+id/passwordLayout" 
+            android:layout_width="match_parent" 
+            android:layout_height="wrap_content" 
+            android:orientation="vertical" 
+            android:visibility="gone">
+            
+            <EditText 
+                android:id="@+id/etPassword" 
+                android:layout_width="match_parent" 
+                android:layout_height="wrap_content" 
+                android:hint="2FA Password" 
+                android:inputType="textPassword" 
+                android:background="@drawable/bg_cyber_input" 
+                android:padding="16dp" 
+                android:layout_marginBottom="24dp"/>
+                
+            <androidx.appcompat.widget.AppCompatButton 
+                android:id="@+id/btnVerifyPassword" 
+                android:layout_width="match_parent" 
+                android:layout_height="60dp" 
+                android:text="UNLOCK" 
+                android:textColor="@color/white" 
+                android:background="@drawable/bg_cyber_button"/>
         </LinearLayout>
     </LinearLayout>
 
