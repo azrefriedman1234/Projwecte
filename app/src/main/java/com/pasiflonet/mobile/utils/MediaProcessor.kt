@@ -1,8 +1,6 @@
 package com.pasiflonet.mobile.utils
 
 import android.content.Context
-import android.graphics.BitmapFactory
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -16,31 +14,15 @@ import java.util.Locale
 
 object MediaProcessor {
 
-    // פונקציה להצגת הודעות בזמן אמת
     private fun showToast(context: Context, msg: String) {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
         }
     }
 
-    private fun getDimensions(path: String, isVideo: Boolean): Pair<Int, Int> {
-        return try {
-            if (isVideo) {
-                val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(path)
-                val w = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt() ?: 0
-                val h = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt() ?: 0
-                retriever.release()
-                Pair(w, h)
-            } else {
-                val options = BitmapFactory.Options()
-                options.inJustDecodeBounds = true
-                BitmapFactory.decodeFile(path, options)
-                Pair(options.outWidth, options.outHeight)
-            }
-        } catch (e: Exception) {
-            Pair(0, 0)
-        }
+    // פונקציה עזר לפרמוט מספרים (למשל 0.534)
+    private fun fmt(f: Float): String {
+        return String.format(Locale.US, "%.4f", f)
     }
 
     fun processContent(
@@ -53,7 +35,7 @@ object MediaProcessor {
         lX: Float, lY: Float, lRelWidth: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        showToast(context, "⚙️ Processing Started...") // דיווח על התחלה
+        showToast(context, "⚙️ Logic: FFmpeg-Native Math")
 
         val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
         val finalOutputPath = if (!outputPath.endsWith(".mp4") && isVideo) "$outputPath.mp4" else outputPath
@@ -61,7 +43,6 @@ object MediaProcessor {
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
         catch (e: Exception) { showToast(context, "❌ Copy Failed"); onComplete(false); return }
 
-        // הכנה ללוגו
         var logoPath: String? = null
         if (logoUri != null) {
             try {
@@ -75,9 +56,6 @@ object MediaProcessor {
             } catch (e: Exception) { }
         }
 
-        val (width, height) = getDimensions(safeInput.absolutePath, isVideo)
-        
-        // בניית פקודת FFmpeg
         val args = mutableListOf<String>()
         args.add("-y")
         args.add("-i"); args.add(safeInput.absolutePath)
@@ -89,59 +67,61 @@ object MediaProcessor {
         val filter = StringBuilder()
         var currentStream = "[0:v]"
         
-        // שלב 1: טשטוש
+        // --- שלב הטשטוש (שימוש ב-iw ו-ih במקום פיקסלים) ---
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
             
-            var pixelW = (width * (r.right - r.left)).toInt()
-            var pixelH = (height * (r.bottom - r.top)).toInt()
-            var pixelX = (width * r.left).toInt()
-            var pixelY = (height * r.top).toInt()
+            // המרה לאחוזים (0.0 - 1.0)
+            val wRel = r.right - r.left
+            val hRel = r.bottom - r.top
+            val xRel = r.left
+            val yRel = r.top
             
-            if (pixelX + pixelW > width) pixelW = width - pixelX
-            if (pixelY + pixelH > height) pixelH = height - pixelY
+            // בניית נוסחאות FFmpeg
+            // iw = Input Width, ih = Input Height
+            // דוגמה: crop=iw*0.5:ih*0.2:iw*0.1:ih*0.1
+            val cropCmd = "crop=iw*${fmt(wRel)}:ih*${fmt(hRel)}:iw*${fmt(xRel)}:ih*${fmt(yRel)}"
             
-            if (pixelW % 2 != 0) pixelW--
-            if (pixelH % 2 != 0) pixelH--
-            if (pixelX % 2 != 0) pixelX--
-            if (pixelY % 2 != 0) pixelY--
-            
-            if (pixelW < 4) pixelW = 4
-            if (pixelH < 4) pixelH = 4
-
-            val wStr = pixelW.toString()
-            val hStr = pixelH.toString()
-            val xStr = pixelX.toString()
-            val yStr = pixelY.toString()
+            // הערה: בטשטוש אנחנו מקטינים ומגדילים כדי לטשטש. 
+            // הנוסחה scale=trunc(iw/10)*2:-2 מבטיחה מימדים זוגיים גם בהקטנה
             
             if (filter.isNotEmpty()) filter.append(";")
             filter.append("$currentStream split=2[$splitName][$cropName];")
-            filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/5/2)*2:-2:flags=lanczos,scale=$wStr:$hStr:flags=lanczos[$blurName];")
-            filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream")
+            
+            // שרשרת הטישטוש: חיתוך -> הקטנה אגרסיבית (טשטוש) -> החזרה לגודל מקורי (יחסי)
+            filter.append("[$cropName]$cropCmd,scale=trunc(iw/5/2)*2:-2:flags=lanczos,scale=iw*5:ih*5:flags=neighbor[$blurName];")
+            
+            // הדבקה חזרה במקום הנכון (שימוש ב-overlay יחסי)
+            // הערה: overlay לא תמיד תומך באחוזים ישירות בגרסאות ישנות, אבל תומך בחישובים.
+            // נשתמש ב-W ו-H של הזרם הראשי (main_w, main_h)
+            filter.append("[$splitName][$blurName]overlay=x=main_w*${fmt(xRel)}:y=main_h*${fmt(yRel)}$nextStream")
+            
             currentStream = nextStream
         }
 
-        // שלב 2: לוגו
+        // --- שלב הלוגו (יחסי) ---
         if (logoPath != null) {
-            var targetLogoW = (width * lRelWidth).toInt()
-            if (targetLogoW % 2 != 0) targetLogoW--
-            if (targetLogoW < 4) targetLogoW = 4
-
-            val finalX = (width * lX).toInt()
-            val finalY = (height * lY).toInt()
-
+            // רוחב הלוגו ביחס לרוחב הוידאו
+            // scale=iw*0.2:-1
+            val scaleCmd = "scale=iw*${fmt(lRelWidth)}:-1"
+            
             if (filter.isNotEmpty()) filter.append(";")
-            filter.append("[1:v]scale=$targetLogoW:-1:flags=lanczos[logo];")
-            filter.append("$currentStream[logo]overlay=x=$finalX:y=$finalY[v_pre_final]")
+            filter.append("[1:v]$scaleCmd[logo];")
+            
+            // מיקום הלוגו
+            val xCmd = "main_w*${fmt(lX)}"
+            val yCmd = "main_h*${fmt(lY)}"
+            
+            filter.append("$currentStream[logo]overlay=x=$xCmd:y=$yCmd[v_pre_final]")
             currentStream = "[v_pre_final]"
         }
 
-        // שלב 3: סיום והגנה (חובה!)
+        // --- שלב סופי (הגנת זוגיות) ---
         if (filter.isNotEmpty()) filter.append(";")
         
         if (isVideo) {
-             // פקודה שמכריחה את הוידאו להיבנות מחדש (re-encode)
+             // מכריחים זוגיות בסוף התהליך
              filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
         } else {
              // תמונות
@@ -152,34 +132,31 @@ object MediaProcessor {
         args.add("-map"); args.add("[v_done]")
         
         if (isVideo) {
-            args.add("-map"); args.add("0:a?") // אודיו בטוח
+            args.add("-map"); args.add("0:a?") 
             
-            // מקודד MPEG4 - הכי תואם שיש
+            // שימוש ב-MPEG4 (במקום libx264 שחסר לך)
             args.add("-c:v"); args.add("mpeg4")
-            args.add("-q:v"); args.add("2")
+            args.add("-q:v"); args.add("2") // איכות מקסימלית
             args.add("-pix_fmt"); args.add("yuv420p")
             
-            // המרת אודיו
             args.add("-c:a"); args.add("aac")
             args.add("-b:a"); args.add("128k")
             args.add("-ac"); args.add("2")
         } else {
-            // PNG לתמונות
             args.add("-c:v"); args.add("png")
         }
         args.add(finalOutputPath)
 
-        showToast(context, "🎬 Encoding Media...") // דיווח על תחילת הקידוד
+        showToast(context, "🎬 Encoding with FFmpeg...")
 
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
             if (ReturnCode.isSuccess(session.returnCode)) {
-                showToast(context, "✅ Encoding Done!") // דיווח על הצלחה
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
-                val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
-                showToast(context, "❌ FFmpeg Failed: $errorMsg")
+                val errorMsg = if (logs.length > 400) logs.takeLast(400) else logs
+                showToast(context, "❌ Fail: $errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
