@@ -5,10 +5,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.lifecycle.lifecycleScope
 import coil.load
 import coil.request.CachePolicy
@@ -28,7 +28,10 @@ class DetailsActivity : AppCompatActivity() {
     private var isVideo = false
     private var fileId = 0
     private var thumbId = 0
-    private var dX = 0f; private var dY = 0f
+    
+    // משתנים לגרירה חלקה
+    private var dX = 0f
+    private var dY = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -109,26 +112,34 @@ class DetailsActivity : AppCompatActivity() {
             else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
         }
 
+        // --- התיקון: לוגיקת גרירה אוניברסלית (translation) ---
+        // עובדת בכל סוג של Layout ולא גורמת לקריסה
         b.ivDraggableLogo.setOnTouchListener { view, event ->
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
             
-            val params = view.layoutParams as ConstraintLayout.LayoutParams
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }
+                MotionEvent.ACTION_DOWN -> {
+                    dX = view.x - event.rawX
+                    dY = view.y - event.rawY
+                }
                 MotionEvent.ACTION_MOVE -> {
-                    val newX = event.rawX + dX
-                    val newY = event.rawY + dY
-                    val parentW = b.ivPreview.width.toFloat()
-                    val parentH = b.ivPreview.height.toFloat()
-                    val centerX = newX + (view.width / 2f) - b.ivPreview.left
-                    val centerY = newY + (view.height / 2f) - b.ivPreview.top
-                    var biasX = centerX / parentW
-                    var biasY = centerY / parentH
-                    if (biasX < 0) biasX = 0f; if (biasX > 1) biasX = 1f
-                    if (biasY < 0) biasY = 0f; if (biasY > 1) biasY = 1f
-                    params.horizontalBias = biasX
-                    params.verticalBias = biasY
-                    view.layoutParams = params
+                    var newX = event.rawX + dX
+                    var newY = event.rawY + dY
+                    
+                    // גבולות גזרה (כדי שהלוגו לא יברח מהמסך)
+                    val parentW = (view.parent as View).width
+                    val parentH = (view.parent as View).height
+                    
+                    if (newX < 0) newX = 0f
+                    if (newX + view.width > parentW) newX = (parentW - view.width).toFloat()
+                    if (newY < 0) newY = 0f
+                    if (newY + view.height > parentH) newY = (parentH - view.height).toFloat()
+                    
+                    view.animate()
+                        .x(newX)
+                        .y(newY)
+                        .setDuration(0)
+                        .start()
                 }
             }
             true
@@ -166,17 +177,20 @@ class DetailsActivity : AppCompatActivity() {
             val finalPath = thumbPath
             if (finalPath == null || !File(finalPath).exists()) { Toast.makeText(this@DetailsActivity, "Wait for HD...", Toast.LENGTH_SHORT).show(); return@launch }
 
-            val params = b.ivDraggableLogo.layoutParams as ConstraintLayout.LayoutParams
-            val lX = params.horizontalBias
-            val lY = params.verticalBias
+            // חישוב מיקום יחסי פשוט ומדויק
+            // X / ParentWidth = אחוז רוחב
+            val parentW = (b.ivDraggableLogo.parent as View).width.toFloat()
+            val parentH = (b.ivDraggableLogo.parent as View).height.toFloat()
+            
+            val lX = b.ivDraggableLogo.x / parentW
+            val lY = b.ivDraggableLogo.y / parentH
+            
             val logoVisualWidth = b.ivDraggableLogo.width * b.ivDraggableLogo.scaleX
-            val imageVisualWidth = b.ivPreview.width.toFloat()
-            val relativeWidth = logoVisualWidth / imageVisualWidth
+            val relativeWidth = logoVisualWidth / parentW
 
             val logoUriStr = prefs.getString("logo_uri", null)
             val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
 
-            // הגדרת נתיב יציאה ברור
             val outputPath = File(cacheDir, "processed_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
 
             Toast.makeText(this@DetailsActivity, "Processing...", Toast.LENGTH_SHORT).show()
@@ -192,8 +206,6 @@ class DetailsActivity : AppCompatActivity() {
                 lRelWidth = relativeWidth,
                 onComplete = { success ->
                     if (success) {
-                        // השינוי הגדול: השליחה מתבצעת כאן, בתוך DetailsActivity
-                        // כי כאן יש לנו גישה ל-TdLibManager
                         lifecycleScope.launch {
                             TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
                             runOnUiThread { 
@@ -201,8 +213,6 @@ class DetailsActivity : AppCompatActivity() {
                                 finish() 
                             }
                         }
-                    } else {
-                         // אם נכשל - הודעה כבר הוצגה ב-MediaProcessor
                     }
                 }
             )
