@@ -3,10 +3,12 @@ package com.pasiflonet.mobile
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.View
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.lifecycle.lifecycleScope
 import coil.load
 import coil.request.CachePolicy
@@ -26,7 +28,6 @@ class DetailsActivity : AppCompatActivity() {
     private var isVideo = false
     private var fileId = 0
     private var thumbId = 0
-    private var logoScale = 1.0f
     private var dX = 0f; private var dY = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,25 +38,16 @@ class DetailsActivity : AppCompatActivity() {
 
             thumbPath = intent.getStringExtra("THUMB_PATH")
             val miniThumb = intent.getByteArrayExtra("MINI_THUMB")
-            
             fileId = intent.getIntExtra("FILE_ID", 0)
             thumbId = intent.getIntExtra("THUMB_ID", 0)
             isVideo = intent.getBooleanExtra("IS_VIDEO", false)
-            val caption = intent.getStringExtra("CAPTION") ?: ""
-            b.etCaption.setText(caption)
+            b.etCaption.setText(intent.getStringExtra("CAPTION") ?: "")
 
-            if (miniThumb != null && miniThumb.isNotEmpty()) {
-                b.ivPreview.load(miniThumb)
-                b.previewContainer.visibility = View.VISIBLE
-            }
+            if (miniThumb != null) b.ivPreview.load(miniThumb)
 
             val targetId = if (thumbId != 0) thumbId else fileId
-            if (targetId != 0) {
-                Toast.makeText(this, "⏳ Loading High Quality...", Toast.LENGTH_SHORT).show()
-                startImageHunter(targetId)
-            } else if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) {
-                loadSharpImage(thumbPath!!)
-            }
+            if (targetId != 0) startImageHunter(targetId)
+            else if (thumbPath != null) loadSharpImage(thumbPath!!)
             
             setupTools()
             setupMediaToggle()
@@ -69,16 +61,12 @@ class DetailsActivity : AppCompatActivity() {
             while (attempts < 120) {
                 TdLibManager.downloadFile(fileIdToHunt)
                 val realPath = TdLibManager.getFilePath(fileIdToHunt)
-                if (realPath != null) {
-                    val file = File(realPath)
-                    if (file.exists() && file.length() > 0) {
-                        withContext(Dispatchers.Main) {
-                            thumbPath = realPath
-                            loadSharpImage(realPath)
-                            Toast.makeText(this@DetailsActivity, "✅ HD Loaded", Toast.LENGTH_SHORT).show()
-                        }
-                        break
+                if (realPath != null && File(realPath).exists() && File(realPath).length() > 0) {
+                    withContext(Dispatchers.Main) {
+                        thumbPath = realPath
+                        loadSharpImage(realPath)
                     }
+                    break
                 }
                 delay(500)
                 attempts++
@@ -92,16 +80,14 @@ class DetailsActivity : AppCompatActivity() {
             diskCachePolicy(CachePolicy.DISABLED)
             crossfade(true)
         }
-        b.previewContainer.visibility = View.VISIBLE
     }
 
     private fun setupMediaToggle() {
         b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
-                b.vDisabledOverlay.visibility = View.GONE; b.tvTextOnlyLabel.visibility = View.GONE; b.mediaToolsContainer.alpha = 1.0f; enableMediaTools(true)
-            } else {
-                b.vDisabledOverlay.visibility = View.VISIBLE; b.tvTextOnlyLabel.visibility = View.VISIBLE; b.mediaToolsContainer.alpha = 0.3f; enableMediaTools(false)
-            }
+            b.vDisabledOverlay.visibility = if (isChecked) View.GONE else View.VISIBLE
+            b.tvTextOnlyLabel.visibility = if (isChecked) View.GONE else View.VISIBLE
+            b.mediaToolsContainer.alpha = if (isChecked) 1.0f else 0.3f
+            enableMediaTools(isChecked)
         }
     }
     
@@ -112,31 +98,67 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f }
+        
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false
-            try {
-                // שימוש ב-SharedPreferences לטעינת הלוגו
-                val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
-                val uriStr = prefs.getString("logo_uri", null)
-                
-                b.ivDraggableLogo.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f
-                if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.clearColorFilter() } 
-                else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
-            } catch (e: Exception) { }
+            b.ivDraggableLogo.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f
+            
+            val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+            val uriStr = prefs.getString("logo_uri", null)
+            if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.clearColorFilter() } 
+            else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
         }
+
+        // לוגיקת גרירת הלוגו - מתוקנת עם ConstraintLayout
         b.ivDraggableLogo.setOnTouchListener { view, event ->
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
+            
+            val params = view.layoutParams as ConstraintLayout.LayoutParams
+            
             when (event.action) {
-                android.view.MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }
-                android.view.MotionEvent.ACTION_MOVE -> { view.animate().x(event.rawX + dX).y(event.rawY + dY).setDuration(0).start() }
+                MotionEvent.ACTION_DOWN -> {
+                    dX = view.x - event.rawX
+                    dY = view.y - event.rawY
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    // עדכון ה-Bias במקום X/Y אבסולוטיים כדי לשמור על יחס תקין
+                    val newX = event.rawX + dX
+                    val newY = event.rawY + dY
+                    
+                    // המרה ל-Bias (בין 0 ל-1) ביחס לתמונה
+                    val parentW = b.ivPreview.width.toFloat()
+                    val parentH = b.ivPreview.height.toFloat()
+                    
+                    // חישוב המרכז החדש של הלוגו
+                    val centerX = newX + (view.width / 2f) - b.ivPreview.left
+                    val centerY = newY + (view.height / 2f) - b.ivPreview.top
+                    
+                    var biasX = centerX / parentW
+                    var biasY = centerY / parentH
+                    
+                    // גבולות גזרה
+                    if (biasX < 0) biasX = 0f; if (biasX > 1) biasX = 1f
+                    if (biasY < 0) biasY = 0f; if (biasY > 1) biasY = 1f
+                    
+                    params.horizontalBias = biasX
+                    params.verticalBias = biasY
+                    view.layoutParams = params
+                }
             }
             true
         }
+
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { val s = 0.5f + (p/100f); b.ivDraggableLogo.scaleX = s; b.ivDraggableLogo.scaleY = s; logoScale = s }
+            override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
+                // שינוי גודל ה-View עצמו
+                val scale = 0.5f + (p / 50f) 
+                b.ivDraggableLogo.scaleX = scale
+                b.ivDraggableLogo.scaleY = scale
+            }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
         })
+
         b.btnTranslate.setOnClickListener { lifecycleScope.launch { val t = b.etCaption.text.toString(); if (t.isNotEmpty()) b.etCaption.setText(TranslationManager.translateToHebrew(t)) } }
         b.btnSend.setOnClickListener { sendData() }
         b.btnCancel.setOnClickListener { finish() }
@@ -144,39 +166,49 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun sendData() {
         lifecycleScope.launch {
-            // שימוש ב-SharedPreferences לקבלת ערוץ היעד
             val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
             val target = prefs.getString("target_username", "") ?: ""
+            if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Set Target Channel in Settings!", Toast.LENGTH_LONG).show(); return@launch }
             
-            if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Go to Settings and set Target Channel!", Toast.LENGTH_LONG).show(); return@launch }
-            
-            val includeMedia = b.swIncludeMedia.isChecked
-            if (!includeMedia) {
+            if (!b.swIncludeMedia.isChecked) {
                 TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), null, false)
-                Toast.makeText(this@DetailsActivity, "Text Sent!", Toast.LENGTH_SHORT).show()
                 finish()
                 return@launch
             }
 
+            val finalPath = thumbPath
+            if (finalPath == null || !File(finalPath).exists()) { Toast.makeText(this@DetailsActivity, "Wait for HD...", Toast.LENGTH_SHORT).show(); return@launch }
+
+            // חישוב מיקום יחסי של הלוגו - מדוייק עכשיו
+            val params = b.ivDraggableLogo.layoutParams as ConstraintLayout.LayoutParams
+            val lX = params.horizontalBias // 0.0 עד 1.0 (מרכז הלוגו)
+            val lY = params.verticalBias   // 0.0 עד 1.0 (מרכז הלוגו)
+            
+            // חישוב גודל יחסי: כמה רוחב הלוגו תופס מסך התמונה?
+            // זה החישוב החדש שפותר את בעיית ה"לוגו הענק"
+            val logoVisualWidth = b.ivDraggableLogo.width * b.ivDraggableLogo.scaleX
+            val imageVisualWidth = b.ivPreview.width.toFloat()
+            val relativeWidth = logoVisualWidth / imageVisualWidth
+
             val logoUriStr = prefs.getString("logo_uri", null)
             val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
-            val lX = if (b.previewContainer.width > 0) b.ivDraggableLogo.x / b.previewContainer.width else 0f
-            val lY = if (b.previewContainer.height > 0) b.ivDraggableLogo.y / b.previewContainer.height else 0f
-            
-            val finalPath = thumbPath
-            
-            if (finalPath == null || !File(finalPath).exists()) {
-                 Toast.makeText(this@DetailsActivity, "❌ Media not ready yet. Please wait a second.", Toast.LENGTH_SHORT).show()
-                 return@launch
-            }
 
-            TdLibManager.processAndSendInBackground(
-                fileId = fileId, thumbPath = finalPath, isVideo = isVideo,
-                caption = b.etCaption.text.toString(), targetUsername = target,
-                rects = b.drawingView.rects.toList(), logoUri = logoUri, lX = lX, lY = lY, lScale = logoScale
+            MediaProcessor.processContent(
+                context = this@DetailsActivity,
+                inputPath = finalPath,
+                outputPath = File(cacheDir, "out.mp4").absolutePath, // Path is dummy, handled inside
+                isVideo = isVideo,
+                rects = b.drawingView.rects.toList(),
+                logoUri = logoUri,
+                lX = lX, lY = lY,
+                lRelWidth = relativeWidth, // שולחים רוחב יחסי במקום סקייל שרירותי
+                onComplete = { success ->
+                    if (success) {
+                        runOnUiThread { Toast.makeText(this@DetailsActivity, "Sent!", Toast.LENGTH_SHORT).show(); finish() }
+                    }
+                }
             )
-            Toast.makeText(this@DetailsActivity, "Processing & Sending...", Toast.LENGTH_SHORT).show()
-            finish()
+            Toast.makeText(this@DetailsActivity, "Sending...", Toast.LENGTH_SHORT).show()
         }
     }
 }
