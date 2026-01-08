@@ -57,14 +57,13 @@ object MediaProcessor {
         onComplete: (Boolean) -> Unit
     ) {
         val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
-        val finalOutputPath = if (!outputPath.endsWith(".mp4") && isVideo) "$outputPath.mp4" else outputPath
-
+        
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
         catch (e: Exception) { onComplete(false); return }
 
         if (rects.isEmpty() && logoUri == null) {
             try { 
-                safeInput.copyTo(File(finalOutputPath), overwrite = true)
+                safeInput.copyTo(File(outputPath), overwrite = true)
                 onComplete(true) 
             } catch (e: Exception) { onComplete(false) }
             return
@@ -103,18 +102,14 @@ object MediaProcessor {
             
             var pixelW = 0; var pixelH = 0; var pixelX = 0; var pixelY = 0
             if (!useMath) {
-                // המרה מנורמלית (0..1) לפיקסלים אמיתיים
-                // אנחנו מקבלים פה מספרים מ-0.0 עד 1.0 (אחוזים מהתמונה)
                 pixelW = (width * (r.right - r.left)).toInt()
                 pixelH = (height * (r.bottom - r.top)).toInt()
                 pixelX = (width * r.left).toInt()
                 pixelY = (height * r.top).toInt()
                 
-                // הגנה קריטית לקרופ: אסור לחרוג מגבולות הוידאו
                 if (pixelX + pixelW > width) pixelW = width - pixelX
                 if (pixelY + pixelH > height) pixelH = height - pixelY
                 
-                // זוגיות
                 if (pixelW % 2 != 0) pixelW--
                 if (pixelH % 2 != 0) pixelH--
                 if (pixelX % 2 != 0) pixelX--
@@ -124,12 +119,8 @@ object MediaProcessor {
                 if (pixelH < 4) pixelH = 4
             }
             
-            val wStr = pixelW.toString()
-            val hStr = pixelH.toString()
-            val xStr = pixelX.toString()
-            val yStr = pixelY.toString()
+            val wStr = pixelW.toString(); val hStr = pixelH.toString(); val xStr = pixelX.toString(); val yStr = pixelY.toString()
             
-            // שיפור איכות הטשטוש: שימוש ב-flags=bicubic לקבלת תוצאה חלקה יותר
             filter.append("$currentStream split=2[$splitName][$cropName];")
             filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=iw/4:-1:flags=bicubic,scale=$wStr:$hStr:flags=bicubic[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream;")
@@ -143,16 +134,9 @@ object MediaProcessor {
 
             filter.append("[1:v]scale=$targetLogoW:-1[logo];")
             
-            // חישוב מיקום לוגו: X = (ImageW * lX) - (LogoW / 2)
-            // מכיוון שאנחנו מקבלים lX כמרכז הלוגו באחוזים
-            // FFmpeg overlay לוקח פינה שמאלית עליונה
-            
-            val posX = (width * lX) - (targetLogoW / 2.0)
-            val posY = (height * lY) - ((targetLogoW * 1.0) / 2.0) // הערכה לגובה, ה-overlay יסתדר
-            
-            // שימוש בפורמט פשוט למיקום (בלי נוסחאות מסובכות בתוך הסטרינג)
-            val finalX = posX.toInt()
-            val finalY = posY.toInt()
+            // חישוב מיקום ישיר: lX הוא האחוז מהפינה השמאלית. פשוט מכפילים ברוחב.
+            val finalX = (width * lX).toInt()
+            val finalY = (height * lY).toInt()
 
             filter.append("$currentStream[logo]overlay=x=$finalX:y=$finalY[v_done]")
         } else {
@@ -165,13 +149,14 @@ object MediaProcessor {
         if (isVideo) {
             args.add("-c:v"); args.add("libx264")
             args.add("-preset"); args.add("ultrafast")
-            args.add("-crf"); args.add("24") // איכות טובה מאוד
+            args.add("-crf"); args.add("24")
             args.add("-pix_fmt"); args.add("yuv420p")
             args.add("-c:a"); args.add("copy")
         } else {
-            args.add("-q:v"); args.add("1") // איכות JPEG מקסימלית (1=הכי טוב)
+            // התיקון לאיכות: שמירה כ-PNG (ללא דחיסה בכלל!)
+            args.add("-c:v"); args.add("png")
         }
-        args.add(finalOutputPath)
+        args.add(outputPath)
 
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()

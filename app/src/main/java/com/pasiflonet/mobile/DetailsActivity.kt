@@ -31,7 +31,6 @@ class DetailsActivity : AppCompatActivity() {
     private var fileId = 0
     private var thumbId = 0
     
-    // גבולות התמונה האמיתיים על המסך
     private var imageBounds = RectF()
     private var dX = 0f
     private var dY = 0f
@@ -55,11 +54,9 @@ class DetailsActivity : AppCompatActivity() {
             if (targetId != 0) startImageHunter(targetId)
             else if (thumbPath != null) loadSharpImage(thumbPath!!)
             
-            // האזנה לשינויי גודל מסך (כדי לחשב גבולות מחדש)
             b.ivPreview.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
                 override fun onGlobalLayout() {
                     imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
-                    // עדכון גבולות הציור ל-DrawingView
                     b.drawingView.setValidBounds(imageBounds)
                 }
             })
@@ -95,7 +92,6 @@ class DetailsActivity : AppCompatActivity() {
             diskCachePolicy(CachePolicy.DISABLED)
             crossfade(true)
             listener(onSuccess = { _, _ ->
-                // חישוב מחדש כשהתמונה נטענת
                 b.ivPreview.post { 
                     imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
                     b.drawingView.setValidBounds(imageBounds)
@@ -130,7 +126,6 @@ class DetailsActivity : AppCompatActivity() {
             if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.clearColorFilter() } 
             else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
             
-            // איפוס מיקום הלוגו למרכז התמונה האמיתית
             b.ivDraggableLogo.post {
                 b.ivDraggableLogo.x = imageBounds.centerX() - (b.ivDraggableLogo.width / 2)
                 b.ivDraggableLogo.y = imageBounds.centerY() - (b.ivDraggableLogo.height / 2)
@@ -149,7 +144,6 @@ class DetailsActivity : AppCompatActivity() {
                     var newX = event.rawX + dX
                     var newY = event.rawY + dY
                     
-                    // הגבלת הגרירה לגבולות התמונה בלבד!
                     if (newX < imageBounds.left) newX = imageBounds.left
                     if (newX + view.width > imageBounds.right) newX = imageBounds.right - view.width
                     if (newY < imageBounds.top) newY = imageBounds.top
@@ -193,36 +187,38 @@ class DetailsActivity : AppCompatActivity() {
             val finalPath = thumbPath
             if (finalPath == null || !File(finalPath).exists()) { Toast.makeText(this@DetailsActivity, "Wait for HD...", Toast.LENGTH_SHORT).show(); return@launch }
 
-            // עדכון גבולות לפני שליחה ליתר ביטחון
             imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
-            if (imageBounds.width() <= 0) { Toast.makeText(this@DetailsActivity, "Error: Image bounds invalid", Toast.LENGTH_SHORT).show(); return@launch }
-
-            // --- חישוב מיקום לוגו יחסי לתמונה (לא למסך!) ---
-            val logoCenterX = b.ivDraggableLogo.x + (b.ivDraggableLogo.width / 2f)
-            val logoCenterY = b.ivDraggableLogo.y + (b.ivDraggableLogo.height / 2f)
             
-            // מנרמלים את המיקום ביחס לפינה השמאלית של התמונה האמיתית
-            // 0.0 = קצה שמאלי של התמונה, 1.0 = קצה ימני של התמונה
-            val lX = (logoCenterX - imageBounds.left) / imageBounds.width()
-            val lY = (logoCenterY - imageBounds.top) / imageBounds.height()
+            // --- חישוב מיקום ישיר (Top-Left) ---
+            // במקום לחשב מרכז, אנחנו מחשבים את הפינה השמאלית של הלוגו ביחס לתמונה
+            // זה מבטל את כל הבעיות של גודל לוגו משתנה
+            val logoX = b.ivDraggableLogo.x - imageBounds.left
+            val logoY = b.ivDraggableLogo.y - imageBounds.top
+            
+            // המרה לאחוזים (0.0 עד 1.0)
+            val relX = logoX / imageBounds.width()
+            val relY = logoY / imageBounds.height()
             
             val logoVisualWidth = b.ivDraggableLogo.width * b.ivDraggableLogo.scaleX
             val relativeWidth = logoVisualWidth / imageBounds.width()
 
             val logoUriStr = prefs.getString("logo_uri", null)
             val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
-            val outputPath = File(cacheDir, "processed_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
+            
+            // שינוי קריטי: שמירה כ-PNG אם זה תמונה! (איכות Lossless)
+            val extension = if(isVideo) "mp4" else "png"
+            val outputPath = File(cacheDir, "processed_${System.currentTimeMillis()}.$extension").absolutePath
 
-            Toast.makeText(this@DetailsActivity, "Processing High Quality...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@DetailsActivity, "Processing Max Quality...", Toast.LENGTH_SHORT).show()
 
             MediaProcessor.processContent(
                 context = this@DetailsActivity,
                 inputPath = finalPath,
                 outputPath = outputPath,
                 isVideo = isVideo,
-                rects = b.drawingView.getRectsRelative(imageBounds), // שליחת ריבועים מנורמלים
+                rects = b.drawingView.getRectsRelative(imageBounds),
                 logoUri = logoUri,
-                lX = lX, lY = lY,
+                lX = relX, lY = relY, // שולחים קואורדינטות פינה שמאלית
                 lRelWidth = relativeWidth,
                 onComplete = { success ->
                     if (success) {
