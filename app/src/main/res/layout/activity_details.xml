@@ -102,12 +102,14 @@
                     android:layout_height="wrap_content"
                     android:checked="true"
                     android:thumbTint="@color/cyber_primary"/>
+                
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Include Media"
                     android:textSize="16sp"
                     android:textStyle="bold"
+                    android:textColor="#1F2937"
                     android:layout_marginStart="12dp"/>
             </LinearLayout>
 
