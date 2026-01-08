@@ -164,7 +164,6 @@ class DetailsActivity : AppCompatActivity() {
         b.btnCancel.setOnClickListener { finish() }
     }
 
-    // פונקציה חזקה להמרת Drawable ל-Bitmap
     private fun getBitmapFromDrawable(drawable: Drawable): Bitmap {
         if (drawable is BitmapDrawable) return drawable.bitmap
         val bitmap = Bitmap.createBitmap(drawable.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888)
@@ -179,22 +178,29 @@ class DetailsActivity : AppCompatActivity() {
         val target = prefs.getString("target_username", "") ?: ""
         if (target.isEmpty()) { Toast.makeText(this, "Set Target!", Toast.LENGTH_SHORT).show(); return }
         
+        // 1. איסוף נתונים מיידי (לפני סגירה)
         val caption = b.etCaption.text.toString()
         val includeMedia = b.swIncludeMedia.isChecked
         val targetId = if (thumbId != 0) thumbId else fileId
         val currentThumbPath = thumbPath
         
+        // וודא גבולות מעודכנים
         updateImageBounds()
-        val relativeWidth = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
-        val rects = b.drawingView.rects.toList()
+        
+        // העתקה עמוקה של רשימת הריבועים (כדי שלא תתאפס ביציאה)
+        val rects = ArrayList(b.drawingView.rects)
+        
+        // שמירת נתוני הלוגו כמשתנים מקומיים (Primitive types נשמרים)
+        val finalRelX = savedLogoRelX
+        val finalRelY = savedLogoRelY
+        val finalRelWidth = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
         
         var logoUriStr = prefs.getString("logo_uri", null)
         var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
 
-        // --- לכידת לוגו משופרת ---
+        // לכידת לוגו סינכרונית (חייב לקרות לפני finish())
         if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE && logoUri == null) {
             try {
-                // שימוש בשיטה אמינה של Canvas במקום DrawingCache
                 val drawable = b.ivDraggableLogo.drawable
                 if (drawable != null) {
                     val bitmap = getBitmapFromDrawable(drawable)
@@ -207,9 +213,11 @@ class DetailsActivity : AppCompatActivity() {
             } catch (e: Exception) { e.printStackTrace() }
         }
 
+        // 2. יציאה מיידית
         Toast.makeText(this, "Processing in background...", Toast.LENGTH_SHORT).show()
         finish() 
 
+        // 3. תהליך הרקע עם הנתונים שנאספו למעלה
         GlobalScope.launch(Dispatchers.IO) {
             if (!includeMedia) {
                 TdLibManager.sendFinalMessage(target, caption, null, false)
@@ -217,6 +225,8 @@ class DetailsActivity : AppCompatActivity() {
             }
 
             var finalPath = currentThumbPath
+            
+            // המתנה להורדה אם צריך
             if (finalPath == null || !File(finalPath).exists()) {
                 if (targetId != 0) {
                      TdLibManager.downloadFile(targetId)
@@ -233,19 +243,20 @@ class DetailsActivity : AppCompatActivity() {
 
             if (finalPath == null || !File(finalPath).exists()) return@launch 
 
-            val extension = if(isVideo) "mp4" else "png" // PNG לתמונות!
+            val extension = if(isVideo) "mp4" else "png"
             val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
+            // שליחה למעבד עם הנתונים המקומיים שנשמרו
             MediaProcessor.processContent(
                 context = applicationContext, 
                 inputPath = finalPath,
                 outputPath = outputPath,
                 isVideo = isVideo,
-                rects = rects,
-                logoUri = logoUri,
-                lX = savedLogoRelX,
-                lY = savedLogoRelY,
-                lRelWidth = relativeWidth,
+                rects = rects, // הרשימה המועתקת
+                logoUri = logoUri, // ה-URI שנלכד
+                lX = finalRelX,
+                lY = finalRelY,
+                lRelWidth = finalRelWidth,
                 onComplete = { success ->
                     if (success) {
                         TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
