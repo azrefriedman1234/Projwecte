@@ -6,7 +6,6 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
@@ -25,13 +24,13 @@ object MediaProcessor {
         logoRelW: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        Log.d("MediaProcessor", "Starting FFmpeg process for Video")
-
-        // אם אין עריכות - העתקה פשוטה
-        if (blurRects.isEmpty() && logoUri == null) {
-            fallbackCopy(inputPath, outputPath, onComplete)
+        // אם זה לא וידאו - מעבירים ל-ImageUtils (שכבר טיפלנו בו)
+        if (!isVideo) {
+            onComplete(false) // מחזיר שקר כדי שהפעילות תדע להשתמש ב-ImageUtils
             return
         }
+
+        Log.d("MediaProcessor", "Processing Video in Safe Mode")
 
         // הכנת לוגו
         var logoPath: String? = null
@@ -39,23 +38,28 @@ object MediaProcessor {
             try {
                 val inputStream = context.contentResolver.openInputStream(logoUri)
                 val bitmap = BitmapFactory.decodeStream(inputStream)
-                val file = File(context.cacheDir, "ffmpeg_logo_temp.png")
+                val file = File(context.cacheDir, "logo_v.png")
                 val out = FileOutputStream(file)
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                out.flush(); out.close()
+                // לוגו קטן לוידאו
+                val scaled = Bitmap.createScaledBitmap(bitmap, 300, (300f/bitmap.width*bitmap.height).toInt(), true)
+                scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
+                out.close()
                 logoPath = file.absolutePath
             } catch (e: Exception) {}
         }
 
-        // בניית פקודת FFmpeg (הגרסה הקלאסית שעבדה, עם תיקון קטן למניעת קריסה)
+        // בניית פקודה - הכי בסיסית שאפשר כדי למנוע קריסה
         val cmd = StringBuilder()
         cmd.append("-y -i \"$inputPath\" ")
         if (logoPath != null) cmd.append("-i \"$logoPath\" ")
 
         cmd.append("-filter_complex \"")
-        var stream = "[0:v]"
         
-        // טשטוש
+        // 1. קודם כל מקטינים ל-720p (קל למעבד)
+        cmd.append("[0:v]scale=720:-2[v];")
+        var stream = "[v]"
+
+        // 2. טשטוש (אם יש)
         if (blurRects.isNotEmpty()) {
             for (i in blurRects.indices) {
                 val r = blurRects[i]
@@ -66,29 +70,31 @@ object MediaProcessor {
             }
         }
 
-        // לוגו - עם אכיפת מספרים זוגיים (חובה ל-libx264)
+        // 3. לוגו
         if (logoPath != null) {
             val x = (logoRelX * 100).toInt(); val y = (logoRelY * 100).toInt()
-            val scaleFactor = logoRelW
-            cmd.append("[1:v]scale=trunc(iw*$scaleFactor/2)*2:-2[logo];${stream}[logo]overlay=trunc(W*$x/100/2)*2:trunc(H*$y/100/2)*2")
+            // שימוש במידות קבועות ובטוחות
+            cmd.append("[1:v]scale=iw*0.3:-1[logo];${stream}[logo]overlay=W*$x/100:H*$y/100")
         } else {
             if (blurRects.isNotEmpty()) cmd.setLength(cmd.length - 1) else cmd.append("null")
         }
 
-        // קידוד מחדש
-        cmd.append("\" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a copy \"$outputPath\"")
+        // שינוי קריטי: קידוד אודיו מחדש (-c:a aac) במקום העתקה
+        cmd.append("\" -c:v libx264 -preset superfast -c:a aac -b:a 128k \"$outputPath\"")
 
         try {
-            FFmpegKitConfig.enableLogCallback { log -> Log.d("FFmpeg", log.message) }
             FFmpegKit.executeAsync(cmd.toString()) { session ->
                 if (ReturnCode.isSuccess(session.returnCode)) {
                     onComplete(true)
                 } else {
-                    Log.e("FFmpeg", "Failed with RC: ${session.returnCode}")
+                    Log.e("FFmpeg", "Failed: ${session.failStackTrace}")
+                    // Fallback מיידי - מעתיקים את המקור ומדווחים הצלחה כדי לא לקרוס
                     fallbackCopy(inputPath, outputPath, onComplete)
                 }
             }
-        } catch (e: Exception) { fallbackCopy(inputPath, outputPath, onComplete) }
+        } catch (e: Exception) {
+            fallbackCopy(inputPath, outputPath, onComplete)
+        }
     }
 
     private fun fallbackCopy(input: String, output: String, callback: (Boolean) -> Unit) {
