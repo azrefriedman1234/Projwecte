@@ -146,16 +146,31 @@ class DetailsActivity : AppCompatActivity() {
     private fun cleanFloat(v: Float): Float { if (v.isNaN() || v.isInfinite()) return 0.0f; if (v < 0f) return 0f; if (v > 1f) return 1f; return v }
 
     private fun sendDataSafe() {
-        try { sendData() } catch (e: Exception) {
+        try { 
+            // הפעלת מסך הטעינה ונטרול כפתורים
+            b.loadingOverlay.visibility = android.view.View.VISIBLE
+            b.btnSend.isEnabled = false
+            b.btnCancel.isEnabled = false
+            sendData() 
+        } catch (e: Exception) {
             Log.e("SEND_CRASH", "Error sending data", e)
             safeToast("Critical Error: ${e.message}")
+            // החזרת המצב לקדמותו במקרה של שגיאה
+            b.loadingOverlay.visibility = android.view.View.GONE
+            b.btnSend.isEnabled = true
+            b.btnCancel.isEnabled = true
         }
     }
 
     private fun sendData() {
         val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         val target = prefs.getString("target_username", "") ?: ""
-        if (target.isEmpty()) { safeToast("Set Target!"); return }
+        if (target.isEmpty()) { 
+            safeToast("Set Target!")
+            b.loadingOverlay.visibility = android.view.View.GONE
+            b.btnSend.isEnabled = true
+            return 
+        }
         
         val caption = b.etCaption.text.toString(); val includeMedia = b.swIncludeMedia.isChecked
         val targetId = if (thumbId != 0) thumbId else fileId; val currentThumbPath = thumbPath
@@ -175,18 +190,21 @@ class DetailsActivity : AppCompatActivity() {
                     val file = File(cacheDir, "captured_logo_final.png"); val out = FileOutputStream(file)
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); out.flush(); out.close(); logoUri = Uri.fromFile(file) 
                 } 
-            } catch (e: Exception) { safeToast("Logo Error: ${e.message}"); return }
+            } catch (e: Exception) { 
+                safeToast("Logo Error: ${e.message}")
+                b.loadingOverlay.visibility = android.view.View.GONE
+                b.btnSend.isEnabled = true
+                return 
+            }
         }
 
-        // חישוב נתונים לוגיים לפני כניסה ל-Coroutine
         val boundsW = if (imageBounds.width() > 0) imageBounds.width() else 1000f
         val logoW = b.ivDraggableLogo.width * savedLogoScale
         var relW = logoW / boundsW; if (relW.isNaN() || relW <= 0) relW = 0.2f
         val relativeWidthSnapshot = relW
         val logoRelXSnapshot = cleanFloat(savedLogoRelX); val logoRelYSnapshot = cleanFloat(savedLogoRelY)
 
-        safeToast("1. Starting Process...")
-        finish() // סגירה בטוחה של המסך
+        // הערה: מחקנו את finish() מכאן! האפליקציה תישאר פתוחה עם גלגל טעינה
 
         GlobalScope.launch(Dispatchers.IO) {
             var wakeLock: PowerManager.WakeLock? = null
@@ -200,10 +218,11 @@ class DetailsActivity : AppCompatActivity() {
                 if (!includeMedia) { 
                     safeToast("Sending Text Only...")
                     TdLibManager.sendFinalMessage(target, caption, null, false)
+                    runOnUiThread { finish() } // סגירה רק בסיום
                     return@launch 
                 }
                 
-                safeToast("2. Finding File...")
+                safeToast("Finding File...")
                 var finalPath = currentThumbPath
                 if (finalPath == null || !File(finalPath).exists()) {
                     if (targetId != 0) { 
@@ -218,32 +237,49 @@ class DetailsActivity : AppCompatActivity() {
                 
                 if (finalPath == null || !File(finalPath).exists()) {
                      safeToast("Error: File not found!")
+                     runOnUiThread { 
+                         b.loadingOverlay.visibility = android.view.View.GONE
+                         b.btnSend.isEnabled = true
+                     }
                      return@launch
                 }
 
-                safeToast("3. Processing Media...")
+                safeToast("Processing Media...")
                 val extension = if(isVideo) "mp4" else "png"
                 val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
-                // קריאה למעבד עם הגנה
                 MediaProcessor.processContent(applicationContext, finalPath, outputPath, isVideo, rectsSnapshot, logoUri, logoRelXSnapshot, logoRelYSnapshot, relativeWidthSnapshot) { success -> 
-                    // שימוש ב-runOnUiThread כדי למנוע קריסה מתוך ה-Callback
                     runOnUiThread {
                         if (success) {
-                            Toast.makeText(applicationContext, "4. Sending...", Toast.LENGTH_SHORT).show()
-                            // כאן מותר להפעיל פעולת רשת כי TdLib מנהל את זה בנפרד
+                            Toast.makeText(applicationContext, "Sending...", Toast.LENGTH_SHORT).show()
                             GlobalScope.launch(Dispatchers.IO) {
-                                try { TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo) }
-                                catch(e: Exception) { safeToast("Send Failed: ${e.message}") }
+                                try { 
+                                    TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
+                                    // סגירה סופית רק אחרי שהכל הצליח
+                                    runOnUiThread { finish() }
+                                }
+                                catch(e: Exception) { 
+                                    safeToast("Send Failed: ${e.message}")
+                                    runOnUiThread { 
+                                        b.loadingOverlay.visibility = android.view.View.GONE
+                                        b.btnSend.isEnabled = true
+                                    }
+                                }
                             }
                         } else {
                             Toast.makeText(applicationContext, "Encoding Failed!", Toast.LENGTH_LONG).show()
+                            b.loadingOverlay.visibility = android.view.View.GONE
+                            b.btnSend.isEnabled = true
                         }
                     }
                 }
             } catch (e: Exception) {
                  Log.e("PROCESS_CRASH", "Critical failure", e)
                  safeToast("Background Error: ${e.message}")
+                 runOnUiThread { 
+                     b.loadingOverlay.visibility = android.view.View.GONE
+                     b.btnSend.isEnabled = true
+                 }
             } finally { 
                 try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (e: Exception) {} 
             }
