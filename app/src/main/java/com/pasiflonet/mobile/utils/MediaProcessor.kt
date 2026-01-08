@@ -57,16 +57,14 @@ object MediaProcessor {
         onComplete: (Boolean) -> Unit
     ) {
         val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
-        
+        // הוספת mp4 לשם הקובץ הסופי באופן וודאי
+        val finalOutputPath = if (!outputPath.endsWith(".mp4") && isVideo) "$outputPath.mp4" else outputPath
+
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
         catch (e: Exception) { onComplete(false); return }
 
-        // אם אין עריכה - פשוט מעתיקים ומודיעים שהכל מוכן
         if (rects.isEmpty() && logoUri == null) {
-            try { 
-                safeInput.copyTo(File(outputPath), overwrite = true)
-                onComplete(true) 
-            } catch (e: Exception) { onComplete(false) }
+            try { safeInput.copyTo(File(finalOutputPath), overwrite = true); TdLibManager.sendFinalMessage(com.pasiflonet.mobile.utils.TdLibManager.lastTarget, com.pasiflonet.mobile.utils.TdLibManager.lastCaption, finalOutputPath, isVideo); onComplete(true) } catch (e: Exception) { onComplete(false) }
             return
         }
 
@@ -113,9 +111,10 @@ object MediaProcessor {
                 wStr = pixelW.toString(); hStr = pixelH.toString(); xStr = pixelX.toString(); yStr = pixelY.toString()
             }
             
-            // Blur by scaling down and up
+            // התיקון הקריטי: scale=trunc(iw/15/2)*2:-2
+            // זה מבטיח שתמיד נקבל מספר זוגי של פיקסלים, אחרת הוידאו קורס
             filter.append("$currentStream split=2[$splitName][$cropName];")
-            filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=iw/15:-1,scale=$wStr:$hStr[$blurName];")
+            filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/15/2)*2:-2,scale=$wStr:$hStr[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream;")
             currentStream = nextStream
         }
@@ -126,7 +125,6 @@ object MediaProcessor {
             if (targetLogoW < 10) targetLogoW = 10 
 
             filter.append("[1:v]scale=$targetLogoW:-1[logo];")
-            
             val bx = fmt(lX)
             val by = fmt(lY)
             filter.append("$currentStream[logo]overlay=x=(W-w)*$bx:y=(H-h)*$by[v_done]")
@@ -138,20 +136,29 @@ object MediaProcessor {
         args.add("-map"); args.add("[v_done]")
         
         if (isVideo) {
-            args.add("-c:v"); args.add("libx264"); args.add("-preset"); args.add("ultrafast"); args.add("-crf"); args.add("28"); args.add("-c:a"); args.add("copy")
+            args.add("-c:v"); args.add("libx264")
+            args.add("-preset"); args.add("ultrafast")
+            args.add("-crf"); args.add("28")
+            
+            // התיקון השני: פורמט פיקסלים אוניברסלי
+            args.add("-pix_fmt"); args.add("yuv420p")
+            
+            args.add("-c:a"); args.add("copy")
         } else {
             args.add("-q:v"); args.add("5")
         }
-        args.add(outputPath)
+        args.add(finalOutputPath)
 
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
             if (ReturnCode.isSuccess(session.returnCode)) {
+                 TdLibManager.sendFinalMessage(com.pasiflonet.mobile.utils.TdLibManager.lastTarget, com.pasiflonet.mobile.utils.TdLibManager.lastCaption, finalOutputPath, isVideo)
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
                 val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
                 showToast(context, "❌ Fix Failed!\n$errorMsg")
+                Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
         }
