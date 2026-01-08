@@ -57,14 +57,14 @@ object MediaProcessor {
         onComplete: (Boolean) -> Unit
     ) {
         val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
-        
+        val finalOutputPath = if (!outputPath.endsWith(".mp4") && isVideo) "$outputPath.mp4" else outputPath
+
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
         catch (e: Exception) { onComplete(false); return }
 
-        // אם אין עריכה - פשוט מעתיקים ומודיעים להצלחה
         if (rects.isEmpty() && logoUri == null) {
             try { 
-                safeInput.copyTo(File(outputPath), overwrite = true)
+                safeInput.copyTo(File(finalOutputPath), overwrite = true)
                 onComplete(true) 
             } catch (e: Exception) { onComplete(false) }
             return
@@ -101,20 +101,37 @@ object MediaProcessor {
             val nextStream = "[v$i]"
             val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
             
-            var wStr = ""; var hStr = ""; var xStr = ""; var yStr = ""
+            // חישוב פיקסלים מדויק וזוגי
+            var pixelW = 0; var pixelH = 0; var pixelX = 0; var pixelY = 0
+            
             if (useMath) {
-                 wStr = "trunc(iw*${fmt(r.right-r.left)})"
-                 hStr = "trunc(ih*${fmt(r.bottom-r.top)})"
-                 xStr = "trunc(iw*${fmt(r.left)})"
-                 yStr = "trunc(ih*${fmt(r.top)})"
+                 // שיטה ישנה - לא מומלץ, אבל כגיבוי
+                 // (לא בשימוש אם getDimensions עובד)
             } else {
-                var pixelW = (width * (r.right - r.left)).toInt(); var pixelH = (height * (r.bottom - r.top)).toInt(); var pixelX = (width * r.left).toInt(); var pixelY = (height * r.top).toInt()
-                if (pixelW % 2 != 0) pixelW--; if (pixelH % 2 != 0) pixelH--
-                wStr = pixelW.toString(); hStr = pixelH.toString(); xStr = pixelX.toString(); yStr = pixelY.toString()
+                pixelW = (width * (r.right - r.left)).toInt()
+                pixelH = (height * (r.bottom - r.top)).toInt()
+                pixelX = (width * r.left).toInt()
+                pixelY = (height * r.top).toInt()
+                
+                // התיקון הקריטי ל-500x500: כל מספר חייב להיות זוגי
+                if (pixelW % 2 != 0) pixelW--
+                if (pixelH % 2 != 0) pixelH--
+                if (pixelX % 2 != 0) pixelX--
+                if (pixelY % 2 != 0) pixelY--
+                
+                // הגנה מינימלית
+                if (pixelW < 4) pixelW = 4
+                if (pixelH < 4) pixelH = 4
             }
             
+            val wStr = pixelW.toString()
+            val hStr = pixelH.toString()
+            val xStr = pixelX.toString()
+            val yStr = pixelY.toString()
+            
+            // שיפור האיכות: הקטנה פי 5 במקום פי 15 (הרבה יותר חד)
             filter.append("$currentStream split=2[$splitName][$cropName];")
-            filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/15/2)*2:-2,scale=$wStr:$hStr[$blurName];")
+            filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=iw/5:-1,scale=$wStr:$hStr[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream;")
             currentStream = nextStream
         }
@@ -138,18 +155,18 @@ object MediaProcessor {
         if (isVideo) {
             args.add("-c:v"); args.add("libx264")
             args.add("-preset"); args.add("ultrafast")
-            args.add("-crf"); args.add("28")
-            args.add("-pix_fmt"); args.add("yuv420p") // התיקון לצבעי הוידאו נשמר כאן
+            args.add("-crf"); args.add("26") // איכות טובה יותר
+            args.add("-pix_fmt"); args.add("yuv420p")
+            args.add("-max_muxing_queue_size"); args.add("1024") // מונע קריסה בעומס
             args.add("-c:a"); args.add("copy")
         } else {
-            args.add("-q:v"); args.add("5")
+            args.add("-q:v"); args.add("2") // איכות תמונה גבוהה (2-3 זה מעולה ב-jpg)
         }
-        args.add(outputPath)
+        args.add(finalOutputPath)
 
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
             if (ReturnCode.isSuccess(session.returnCode)) {
-                // רק מדווחים שהצלחנו, לא שולחים מכאן!
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
