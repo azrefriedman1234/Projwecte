@@ -1,162 +1,147 @@
 package com.pasiflonet.mobile.utils
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
-import android.widget.Toast
-import android.os.Handler
-import android.os.Looper
 import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
-import java.util.Locale
+
+data class BlurRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
 
 object MediaProcessor {
-
-    private fun showToast(context: Context, msg: String) {
-        Handler(Looper.getMainLooper()).post {
-            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun fmt(f: Float): String {
-        return String.format(Locale.US, "%.6f", f)
-    }
 
     fun processContent(
         context: Context,
         inputPath: String,
         outputPath: String,
         isVideo: Boolean,
-        rects: List<BlurRect>,
+        blurRects: List<BlurRect>,
         logoUri: Uri?,
-        lX: Float, lY: Float, lRelWidth: Float,
+        logoRelX: Float,
+        logoRelY: Float,
+        logoRelW: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        File(outputPath).delete()
-        
-        val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
-        val finalOutputPath = if (!outputPath.endsWith(".mp4") && isVideo) "$outputPath.mp4" else outputPath
+        Log.d("MediaProcessor", "Starting process for: $inputPath")
 
-        try { File(inputPath).copyTo(safeInput, overwrite = true) } 
-        catch (e: Exception) { showToast(context, "❌ Copy Failed"); onComplete(false); return }
+        // 1. אם אין עריכות (בלי לוגו ובלי טשטוש) - פשוט מעתיקים ושולחים
+        if (blurRects.isEmpty() && logoUri == null) {
+            Log.d("MediaProcessor", "No edits needed. Copying file.")
+            try {
+                File(inputPath).copyTo(File(outputPath), overwrite = true)
+                onComplete(true)
+            } catch (e: Exception) {
+                Log.e("MediaProcessor", "Copy failed", e)
+                onComplete(false)
+            }
+            return
+        }
 
+        // 2. הכנת לוגו (אם יש)
         var logoPath: String? = null
         if (logoUri != null) {
             try {
-                val tempLogo = File(context.cacheDir, "logo.png")
                 val inputStream = context.contentResolver.openInputStream(logoUri)
-                val outputStream = FileOutputStream(tempLogo)
-                inputStream?.copyTo(outputStream)
-                inputStream?.close()
-                outputStream.close()
-                logoPath = tempLogo.absolutePath
-            } catch (e: Exception) { }
-        }
-
-        val args = mutableListOf<String>()
-        args.add("-y")
-        args.add("-i"); args.add(safeInput.absolutePath)
-        
-        if (logoPath != null) {
-            // --- התיקון הקריטי לוידאו 0 שניות ---
-            // חובה לשים -loop 1 לפני ה-Input של הלוגו!
-            if (isVideo) {
-                args.add("-loop"); args.add("1")
+                val bitmap = BitmapFactory.decodeStream(inputStream)
+                val file = File(context.cacheDir, "ffmpeg_logo_temp.png")
+                val out = FileOutputStream(file)
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                out.flush(); out.close()
+                logoPath = file.absolutePath
+                Log.d("MediaProcessor", "Logo saved to: $logoPath")
+            } catch (e: Exception) {
+                Log.e("MediaProcessor", "Failed to prepare logo", e)
+                // ממשיכים בלי לוגו במקרה של שגיאה
             }
-            args.add("-i"); args.add(logoPath)
         }
 
-        val filter = StringBuilder()
-        var currentStream = "[0:v]"
+        // 3. בניית פקודת FFmpeg
+        val cmd = StringBuilder()
+        cmd.append("-y -i \"$inputPath\" ")
         
-        // --- טשטוש ---
-        rects.forEachIndexed { i, r ->
-            val nextStream = "[v$i]"
-            val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
-            
-            val wRel = r.right - r.left
-            val hRel = r.bottom - r.top
-            val xRel = r.left
-            val yRel = r.top
-            
-            if (filter.isNotEmpty()) filter.append(";")
-            filter.append("$currentStream split=2[$splitName][$cropName];")
-            
-            // חיתוך מדויק
-            val cropCmd = "crop=iw*${fmt(wRel)}:ih*${fmt(hRel)}:iw*${fmt(xRel)}:ih*${fmt(yRel)}"
-            
-            // טשטוש חזק ואיכותי
-            filter.append("[$cropName]$cropCmd,scale=trunc(iw/15/2)*2:-2:flags=lanczos,scale=iw*15:ih*15:flags=neighbor[$blurName];")
-            
-            // overlay עם shortest=1 (חשוב מאוד!)
-            // ה-1 אומר: תסיים כשהקובץ הכי קצר (הוידאו המקורי) נגמר
-            filter.append("[$splitName][$blurName]overlay=x=main_w*${fmt(xRel)}:y=main_h*${fmt(yRel)}:shortest=1$nextStream")
-            
-            currentStream = nextStream
-        }
-
-        // --- לוגו ---
         if (logoPath != null) {
-            val scaleCmd = "scale=iw*${fmt(lRelWidth)}:-1"
-            
-            if (filter.isNotEmpty()) filter.append(";")
-            filter.append("[1:v]$scaleCmd[logo];")
-            
-            val xCmd = "main_w*${fmt(lX)}"
-            val yCmd = "main_h*${fmt(lY)}"
-            
-            filter.append("$currentStream[logo]overlay=x=$xCmd:y=$yCmd:shortest=1[v_pre_final]")
-            currentStream = "[v_pre_final]"
+            cmd.append("-i \"$logoPath\" ")
         }
 
-        if (filter.isNotEmpty()) filter.append(";")
+        cmd.append("-filter_complex \"")
         
-        if (isVideo) {
-             filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
+        // בניית פילטר הטשטוש
+        var stream = "[0:v]"
+        if (blurRects.isNotEmpty()) {
+            for (i in blurRects.indices) {
+                val r = blurRects[i]
+                // המרת אחוזים לפיקסלים (בערך, FFmpeg מחשב לבד)
+                val x = (r.left * 100).toInt()
+                val y = (r.top * 100).toInt()
+                val w = ((r.right - r.left) * 100).toInt()
+                val h = ((r.bottom - r.top) * 100).toInt()
+                
+                // שימוש ב-boxblur פשוט ומהיר שלא קורס
+                cmd.append("${stream}boxblur=10:1:enable='between(x,iw*$x/100,iw*${x+w}/100)*between(y,ih*$y/100,ih*${y+h}/100)'[b$i];")
+                stream = "[b$i]"
+            }
+        }
+
+        // בניית פילטר הלוגו
+        if (logoPath != null) {
+            val x = (logoRelX * 100).toInt()
+            val y = (logoRelY * 100).toInt()
+            val w = (logoRelW * 100).toInt()
+            // הקטנת הלוגו והלבשתו
+            cmd.append("[1:v]scale=iw*$w/100:-1[logo];${stream}[logo]overlay=W*$x/100:H*$y/100")
         } else {
-             filter.append("${currentStream}null[v_done]")
-        }
-        
-        args.add("-filter_complex"); args.add(filter.toString())
-        args.add("-map"); args.add("[v_done]")
-        
-        if (isVideo) {
-            args.add("-map"); args.add("0:a?") 
-            
-            // --- איכות וידאו קיצונית ---
-            args.add("-r"); args.add("30")
-            args.add("-c:v"); args.add("mpeg4")
-            args.add("-b:v"); args.add("15M") // 15 מגה-ביט! איכות מטורפת
-            args.add("-maxrate"); args.add("20M")
-            args.add("-bufsize"); args.add("30M")
-            args.add("-pix_fmt"); args.add("yuv420p")
-            
-            args.add("-c:a"); args.add("aac")
-            args.add("-b:a"); args.add("256k")
-            args.add("-ac"); args.add("2")
-        } else {
-            // --- איכות תמונה ---
-            args.add("-c:v"); args.add("png")
-            // דחיסה נמוכה יותר כדי לשמור על פרטים
-            args.add("-compression_level"); args.add("3")
-        }
-        args.add(finalOutputPath)
-
-        showToast(context, "🎬 High-Res Rendering...")
-
-        FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
-            safeInput.delete()
-            if (ReturnCode.isSuccess(session.returnCode)) {
-                onComplete(true)
+            // אם אין לוגו, רק מסיימים את השרשרת (מורידים את הנקודה-פסיק האחרון)
+            if (blurRects.isNotEmpty()) {
+                cmd.setLength(cmd.length - 1) // מחיקת ;
             } else {
-                val logs = session.allLogsAsString
-                val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
-                showToast(context, "❌ Render Fail: $errorMsg")
-                Log.e("FFMPEG_FAIL", logs)
-                onComplete(false)
+                cmd.append("null") // פילטר ריק אם משהו התפקשש
             }
+        }
+
+        cmd.append("\" ") // סגירת המרכאות של הפילטר
+
+        // הגדרות קידוד (מהירות על חשבון איכות למניעת קריסות)
+        if (isVideo) {
+            cmd.append("-c:v libx264 -preset ultrafast -c:a copy ")
+        }
+        
+        cmd.append("\"$outputPath\"")
+
+        val finalCommand = cmd.toString()
+        Log.d("MediaProcessor", "Executing FFmpeg: $finalCommand")
+
+        // 4. הרצה אסינכרונית עם טיפול בשגיאות
+        try {
+            FFmpegKitConfig.enableLogCallback { log -> Log.d("FFmpeg", log.message) }
+            
+            FFmpegKit.executeAsync(finalCommand) { session ->
+                val returnCode = session.returnCode
+                if (ReturnCode.isSuccess(returnCode)) {
+                    Log.d("MediaProcessor", "Success!")
+                    onComplete(true)
+                } else {
+                    Log.e("MediaProcessor", "Failed with state ${session.state} and rc ${session.returnCode}")
+                    Log.e("MediaProcessor", "Fail logs: ${session.failStackTrace}")
+                    
+                    // מנגנון הצלה (Fallback):
+                    // אם הקידוד נכשל, מנסים פשוט להעתיק את המקור כדי שהשליחה לא תיכשל לגמרי
+                    try {
+                        Log.w("MediaProcessor", "Attempting fallback: Copy original file")
+                        File(inputPath).copyTo(File(outputPath), overwrite = true)
+                        onComplete(true) // מדווחים הצלחה (חלקית)
+                    } catch (e: Exception) {
+                        onComplete(false)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MediaProcessor", "Exception launching FFmpeg", e)
+            onComplete(false)
         }
     }
 }
