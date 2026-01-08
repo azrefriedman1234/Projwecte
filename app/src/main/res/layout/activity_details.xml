@@ -80,6 +80,8 @@
             android:gravity="center_vertical">
 
             <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="Control Panel"
                 android:textSize="22sp"
                 android:textStyle="bold"
@@ -101,15 +103,17 @@
                     android:checked="true"
                     android:thumbTint="@color/cyber_primary"/>
                 <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:text="Include Media"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:layout_marginStart="12dp"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"/>
+                    android:layout_marginStart="12dp"/>
             </LinearLayout>
 
             <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="Tools"
                 android:textSize="14sp"
                 android:textColor="@color/text_secondary"
@@ -143,6 +147,8 @@
             </LinearLayout>
             
             <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="Logo Size"
                 android:textSize="12sp"
                 android:layout_marginTop="4dp"
@@ -157,6 +163,8 @@
                 android:layout_marginBottom="24dp"/>
 
             <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="Message"
                 android:textSize="14sp"
                 android:textColor="@color/text_secondary"
@@ -215,8 +223,6 @@
                     android:textColor="#FF5252"
                     android:background="@null"/>
             </LinearLayout>
-
         </LinearLayout>
     </ScrollView>
-
 </androidx.constraintlayout.widget.ConstraintLayout>

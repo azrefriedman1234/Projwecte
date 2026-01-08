@@ -15,7 +15,6 @@
         android:textSize="34sp"
         android:textStyle="bold"
         android:textColor="@color/text_primary"
-        android:letterSpacing="0.05"
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         android:layout_marginTop="20dp"/>
@@ -80,7 +79,7 @@
             android:layout_height="wrap_content" 
             android:hint="API ID" 
             android:inputType="number" 
-            android:background="@null"
+            android:background="@null" 
             android:textColor="@color/text_primary"
             android:textColorHint="@color/text_secondary"
             android:padding="12dp" 
@@ -238,5 +237,4 @@
             android:clipToPadding="false"
             android:paddingBottom="20dp"/>
     </LinearLayout>
-
 </androidx.constraintlayout.widget.ConstraintLayout>
