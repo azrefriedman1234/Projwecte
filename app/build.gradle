@@ -11,38 +11,17 @@ android {
         applicationId "com.pasiflonet.mobile"
         minSdk 24
         targetSdk 33
-        versionCode 9
-        versionName "1.8-Verified"
-
-        ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a'
-        }
-    }
-
-    signingConfigs {
-        release {
-            storeFile file("release.jks")
-            storePassword "123456"
-            keyAlias "pasiflonet_key"
-            keyPassword "123456"
-        }
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
-        debug {
-            signingConfig signingConfigs.release
-        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
         }
     }
-    
-    packagingOptions {
-        pickFirst '**/*.so'
-    }
-
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
@@ -58,15 +37,13 @@ android {
 dependencies {
     implementation 'androidx.core:core-ktx:1.9.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'com.google.android.material:material:1.9.0' // חובה לעיצוב החדש!
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    
-    // התיקון שלך: שימוש ב-Package שמצאת ב-Maven Central
-    implementation 'com.mrljdx:ffmpeg-kit-full:6.1.4'
-    
-    implementation 'com.github.tdlibx:td:1.8.56'
-    implementation "androidx.work:work-runtime-ktx:2.8.1"
+    implementation 'androidx.cardview:cardview:1.0.0' // חובה לכרטיסיות!
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
-    implementation "androidx.datastore:datastore-preferences:1.0.0"
-    implementation 'io.coil-kt:coil:2.4.0'
+    implementation("io.coil-kt:coil:2.4.0")
+    implementation 'com.arthenica:ffmpeg-kit-full:6.0' 
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }

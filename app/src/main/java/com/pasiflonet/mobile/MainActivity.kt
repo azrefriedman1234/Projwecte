@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.drinkless.tdlib.TdApi
 import java.io.File
+import android.util.Log
 
 class MainActivity : AppCompatActivity() {
     private lateinit var b: ActivityMainBinding
@@ -26,13 +27,32 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        b = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(b.root)
         
-        startService(Intent(this, KeepAliveService::class.java))
+        // --- Crash Catcher Start ---
+        try {
+            b = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(b.root)
+        } catch (e: Exception) {
+            // אם העיצוב נכשל, נציג מסך חירום
+            Log.e("UI_CRASH", "Layout Inflation Failed", e)
+            val errorView = android.widget.TextView(this)
+            errorView.text = "CRITICAL UI ERROR:\n${e.message}\n\nCheck Logcat for details."
+            errorView.textSize = 20f
+            errorView.setTextColor(android.graphics.Color.RED)
+            errorView.setPadding(50, 50, 50, 50)
+            setContentView(errorView)
+            return // עוצרים כאן כדי לא להמשיך לקרוס
+        }
+        // --- Crash Catcher End ---
         
-        b.apiContainer.visibility = View.GONE; b.loginContainer.visibility = View.GONE; b.mainContent.visibility = View.GONE
-        setupUI(); checkPermissions(); checkApiAndInit()
+        try {
+            startService(Intent(this, KeepAliveService::class.java))
+            
+            b.apiContainer.visibility = View.GONE; b.loginContainer.visibility = View.GONE; b.mainContent.visibility = View.GONE
+            setupUI(); checkPermissions(); checkApiAndInit()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Runtime Error: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun setupUI() {
@@ -83,7 +103,6 @@ class MainActivity : AppCompatActivity() {
                 is TdApi.MessageText -> caption = (msg.content as TdApi.MessageText).text.text
             }
 
-            // גם כאן, דחיפה להורדה (למקרה שזה לא ירד עדיין)
             if (fullId != 0) TdLibManager.downloadFile(fullId)
             
             val intent = Intent(this, DetailsActivity::class.java)
@@ -133,30 +152,19 @@ class MainActivity : AppCompatActivity() {
             } 
         }
         
-        // --- מנגנון ההורדה האוטומטי ---
         lifecycleScope.launch(Dispatchers.IO) { 
             TdLibManager.currentMessages.collect { m -> 
-                // 1. עדכון המסך (בראשי)
                 withContext(Dispatchers.Main) { 
                     adapter.updateList(m) 
                 } 
-                
-                // 2. סריקה והורדה של קבצים ברקע (ב-IO)
                 m.forEach { msg ->
                     var fileIdToDownload = 0
                     if (msg.content is TdApi.MessagePhoto) {
-                        val photo = (msg.content as TdApi.MessagePhoto).photo
-                        // לוקחים את הגודל הכי גדול (HD)
-                        fileIdToDownload = photo.sizes.lastOrNull()?.photo?.id ?: 0
+                        fileIdToDownload = (msg.content as TdApi.MessagePhoto).photo.sizes.lastOrNull()?.photo?.id ?: 0
                     } else if (msg.content is TdApi.MessageVideo) {
-                        // וידאו זה רק קובץ אחד
                         fileIdToDownload = (msg.content as TdApi.MessageVideo).video.video.id
                     }
-                    
-                    if (fileIdToDownload != 0) {
-                        // פקודה ישירה ל-TDLib: תוריד את זה עכשיו!
-                        TdLibManager.downloadFile(fileIdToDownload)
-                    }
+                    if (fileIdToDownload != 0) TdLibManager.downloadFile(fileIdToDownload)
                 }
             } 
         } 
