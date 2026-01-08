@@ -114,12 +114,11 @@ object MediaProcessor {
             val xStr = pixelX.toString()
             val yStr = pixelY.toString()
             
-            // במידה וכבר יש פקודות קודמות, נוסיף נקודה-פסיק מפרידה
             if (filter.isNotEmpty()) filter.append(";")
             
             filter.append("$currentStream split=2[$splitName][$cropName];")
             filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/5/2)*2:-2:flags=lanczos,scale=$wStr:$hStr:flags=lanczos[$blurName];")
-            filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream") // שימו לב: אין נקודה פסיק בסוף כאן
+            filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream")
             currentStream = nextStream
         }
 
@@ -143,7 +142,7 @@ object MediaProcessor {
         if (filter.isNotEmpty()) filter.append(";")
         
         if (isVideo) {
-            // הגנה לוידאו: חובה מימדים זוגיים
+            // הגנת זוגיות לוידאו
             filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
         } else {
             // חידוד לתמונות
@@ -151,20 +150,26 @@ object MediaProcessor {
         }
 
         args.add("-filter_complex"); args.add(filter.toString())
+        
+        // מיפוי וידאו
         args.add("-map"); args.add("[v_done]")
         
         if (isVideo) {
+            // --- התיקון הגדול לאודיו ---
+            // המיפוי 0:a? אומר: קח את האודיו מהקובץ הראשון (0) רק אם הוא קיים (?)
+            // אם אין אודיו, FFmpeg פשוט יצור וידאו אילם בלי לקרוס
+            args.add("-map"); args.add("0:a?")
+            
             args.add("-c:v"); args.add("libx264")
-            args.add("-preset"); args.add("superfast") // מהיר ויציב
-            args.add("-crf"); args.add("23") // איכות סטנדרטית טובה
-            args.add("-pix_fmt"); args.add("yuv420p") // חובה לאנדרואיד
+            args.add("-preset"); args.add("ultrafast")
+            args.add("-crf"); args.add("23")
+            args.add("-pix_fmt"); args.add("yuv420p")
             
-            // הסרנו את הפרופיל וה-Level שגרמו לשגיאה עם 500x500
+            // חזרה להעתקה בטוחה (copy) במקום קידוד מחדש
+            args.add("-c:a"); args.add("copy")
             
-            // קידוד אודיו מחדש
-            args.add("-c:a"); args.add("aac")
-            args.add("-b:a"); args.add("128k")
-            args.add("-ac"); args.add("2")
+            // דגלים לתאימות מקסימלית (Telegram Friendly)
+            args.add("-movflags"); args.add("+faststart")
         } else {
             args.add("-q:v"); args.add("1")
         }
@@ -177,7 +182,7 @@ object MediaProcessor {
             } else {
                 val logs = session.allLogsAsString
                 val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
-                showToast(context, "❌ Encoder Error: $errorMsg")
+                showToast(context, "❌ Fix Failed!\n$errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
