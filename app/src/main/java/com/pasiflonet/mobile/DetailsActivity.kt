@@ -10,6 +10,8 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.ViewTreeObserver
 import android.widget.ImageView
 import android.widget.SeekBar
@@ -55,14 +57,27 @@ class DetailsActivity : AppCompatActivity() {
             
             b.ivPreview.scaleType = ImageView.ScaleType.FIT_CENTER
             
-            thumbPath = intent.getStringExtra("THUMB_PATH")
-            val miniThumb = intent.getByteArrayExtra("MINI_THUMB")
-            fileId = intent.getIntExtra("FILE_ID", 0); thumbId = intent.getIntExtra("THUMB_ID", 0)
-            isVideo = intent.getBooleanExtra("IS_VIDEO", false)
-            b.etCaption.setText(intent.getStringExtra("CAPTION") ?: "")
+            // בדיקה אם הגענו מ"שיתוף" חדש או סתם פתיחה מחדש
+            val intentCaption = intent.getStringExtra("CAPTION")
+            val intentThumb = intent.getStringExtra("THUMB_PATH")
             
-            if (miniThumb != null) b.ivPreview.load(miniThumb)
+            if (intentThumb != null || intentCaption != null) {
+                // הגענו עם תוכן חדש - נטען אותו
+                thumbPath = intentThumb
+                val miniThumb = intent.getByteArrayExtra("MINI_THUMB")
+                fileId = intent.getIntExtra("FILE_ID", 0); thumbId = intent.getIntExtra("THUMB_ID", 0)
+                isVideo = intent.getBooleanExtra("IS_VIDEO", false)
+                b.etCaption.setText(intentCaption ?: "")
+                if (miniThumb != null) b.ivPreview.load(miniThumb)
+                saveDraft() // שמירת הטיוטה החדשה מיד
+            } else {
+                // הגענו "נקי" (אולי אחרי קריסה) - ננסה לשחזר טיוטה
+                if (restoreDraft()) {
+                    safeToast("♻️ Restored previous session")
+                }
+            }
             
+            // טעינת תמונה מלאה אם צריך
             val targetId = if (thumbId != 0) thumbId else fileId
             if (targetId != 0) startHDImageHunter(targetId) else if (thumbPath != null) loadSharpImage(thumbPath!!)
             
@@ -73,9 +88,50 @@ class DetailsActivity : AppCompatActivity() {
                 if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE) restoreLogoPosition() 
             }
             
+            // שמירה אוטומטית בעת הקלדה
+            b.etCaption.addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) { saveDraft() }
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            })
+            
             setupTools(); setupMediaToggle()
         } catch (e: Exception) { safeToast("Init Error: ${e.message}") }
     }
+
+    // --- מנגנון שמירת טיוטה ---
+    private fun saveDraft() {
+        try {
+            val prefs = getSharedPreferences("draft_prefs", MODE_PRIVATE)
+            val editor = prefs.edit()
+            editor.putString("draft_caption", b.etCaption.text.toString())
+            editor.putString("draft_path", thumbPath)
+            editor.putBoolean("draft_is_video", isVideo)
+            editor.putInt("draft_file_id", fileId)
+            editor.apply()
+        } catch (e: Exception) {}
+    }
+
+    private fun restoreDraft(): Boolean {
+        val prefs = getSharedPreferences("draft_prefs", MODE_PRIVATE)
+        val draftPath = prefs.getString("draft_path", null)
+        val draftCaption = prefs.getString("draft_caption", "")
+        
+        if (draftPath != null || !draftCaption.isNullOrEmpty()) {
+            thumbPath = draftPath
+            isVideo = prefs.getBoolean("draft_is_video", false)
+            fileId = prefs.getInt("draft_file_id", 0)
+            b.etCaption.setText(draftCaption)
+            if (thumbPath != null) loadSharpImage(thumbPath!!)
+            return true
+        }
+        return false
+    }
+
+    private fun clearDraft() {
+        getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().clear().apply()
+    }
+    // ---------------------------
 
     private fun safeToast(msg: String) {
         runOnUiThread { Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() }
@@ -87,7 +143,11 @@ class DetailsActivity : AppCompatActivity() {
             for (i in 0..20) {
                 val realPath = TdLibManager.getFilePath(targetId)
                 if (realPath != null && File(realPath).exists() && File(realPath).length() > 1000) {
-                    withContext(Dispatchers.Main) { thumbPath = realPath; loadSharpImage(realPath) }
+                    withContext(Dispatchers.Main) { 
+                        thumbPath = realPath
+                        loadSharpImage(realPath)
+                        saveDraft() // עדכון הנתיב המלא בטיוטה
+                    }
                     break
                 }
                 delay(500)
@@ -137,7 +197,7 @@ class DetailsActivity : AppCompatActivity() {
         }
         b.ivDraggableLogo.setOnTouchListener { view, event -> if (b.drawingView.isBlurMode) return@setOnTouchListener false; when (event.action) { android.view.MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }; android.view.MotionEvent.ACTION_MOVE -> { var newX = event.rawX + dX; var newY = event.rawY + dY; if (newX < imageBounds.left) newX = imageBounds.left; if (newX + view.width > imageBounds.right) newX = imageBounds.right - view.width; if (newY < imageBounds.top) newY = imageBounds.top; if (newY + view.height > imageBounds.bottom) newY = imageBounds.bottom - view.height; view.x = newX; view.y = newY; if (imageBounds.width() > 0) { savedLogoRelX = (newX - imageBounds.left) / imageBounds.width(); savedLogoRelY = (newY - imageBounds.top) / imageBounds.height() } } }; true }
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener { override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { val scale = 0.5f + (p / 50f); b.ivDraggableLogo.scaleX = scale; b.ivDraggableLogo.scaleY = scale; savedLogoScale = scale }; override fun onStartTrackingTouch(sb: SeekBar?) {}; override fun onStopTrackingTouch(sb: SeekBar?) {} })
-        b.btnTranslate.setOnClickListener { lifecycleScope.launch { val t = b.etCaption.text.toString(); if (t.isNotEmpty()) b.etCaption.setText(TranslationManager.translateToHebrew(t)) } }
+        b.btnTranslate.setOnClickListener { lifecycleScope.launch { val t = b.etCaption.text.toString(); if (t.isNotEmpty()) { b.etCaption.setText(TranslationManager.translateToHebrew(t)); saveDraft() } } }
         b.btnSend.setOnClickListener { sendDataSafe() }
         b.btnCancel.setOnClickListener { finish() }
     }
@@ -152,7 +212,6 @@ class DetailsActivity : AppCompatActivity() {
             b.btnCancel.isEnabled = false
             sendData() 
         } catch (e: Exception) {
-            Log.e("SEND_CRASH", "Error sending data", e)
             safeToast("Critical Error: ${e.message}")
             b.loadingOverlay.visibility = android.view.View.GONE
             b.btnSend.isEnabled = true
@@ -214,6 +273,7 @@ class DetailsActivity : AppCompatActivity() {
                 if (!includeMedia) { 
                     safeToast("Sending Text Only...")
                     TdLibManager.sendFinalMessage(target, caption, null, false)
+                    clearDraft() // מחיקת הטיוטה בהצלחה
                     runOnUiThread { finish() }
                     return@launch 
                 }
@@ -251,6 +311,7 @@ class DetailsActivity : AppCompatActivity() {
                             GlobalScope.launch(Dispatchers.IO) {
                                 try { 
                                     TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
+                                    clearDraft() // מחיקת הטיוטה בהצלחה
                                     runOnUiThread { finish() }
                                 }
                                 catch(e: Exception) { 
