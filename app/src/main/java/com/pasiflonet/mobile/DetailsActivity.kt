@@ -1,7 +1,10 @@
 package com.pasiflonet.mobile
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.RectF
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.MotionEvent
@@ -23,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 
 class DetailsActivity : AppCompatActivity() {
     private lateinit var b: ActivityDetailsBinding
@@ -33,7 +37,6 @@ class DetailsActivity : AppCompatActivity() {
     
     private var imageBounds = RectF()
     
-    // משתנים לשמירת מיקום יחסי של הלוגו
     private var savedLogoRelX = 0.5f
     private var savedLogoRelY = 0.5f
     private var savedLogoScale = 1.0f
@@ -214,8 +217,35 @@ class DetailsActivity : AppCompatActivity() {
         val relativeWidth = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
         
         val rects = b.drawingView.rects
-        val logoUriStr = prefs.getString("logo_uri", null)
-        val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
+        
+        // --- תיקון לוגו ברירת מחדל ---
+        var logoUriStr = prefs.getString("logo_uri", null)
+        var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
+        
+        // אם הלוגו מוצג אבל אין URI (כלומר, לוגו ברירת מחדל), אנחנו שומרים אותו לקובץ זמני
+        if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE && logoUri == null) {
+            try {
+                val drawable = b.ivDraggableLogo.drawable
+                if (drawable != null) {
+                    val bitmap = if (drawable is BitmapDrawable) {
+                        drawable.bitmap
+                    } else {
+                        val bmp = Bitmap.createBitmap(drawable.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(bmp)
+                        drawable.setBounds(0, 0, canvas.width, canvas.height)
+                        drawable.draw(canvas)
+                        bmp
+                    }
+                    val file = File(cacheDir, "temp_default_logo.png")
+                    val out = FileOutputStream(file)
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    out.flush(); out.close()
+                    logoUri = Uri.fromFile(file)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
 
         GlobalScope.launch(Dispatchers.IO) {
             if (!includeMedia) {
