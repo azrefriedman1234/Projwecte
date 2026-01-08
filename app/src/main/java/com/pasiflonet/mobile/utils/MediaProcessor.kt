@@ -57,14 +57,16 @@ object MediaProcessor {
         onComplete: (Boolean) -> Unit
     ) {
         val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
-        // הוספת mp4 לשם הקובץ הסופי באופן וודאי
-        val finalOutputPath = if (!outputPath.endsWith(".mp4") && isVideo) "$outputPath.mp4" else outputPath
-
+        
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
         catch (e: Exception) { onComplete(false); return }
 
+        // אם אין עריכה - פשוט מעתיקים ומודיעים להצלחה
         if (rects.isEmpty() && logoUri == null) {
-            try { safeInput.copyTo(File(finalOutputPath), overwrite = true); TdLibManager.sendFinalMessage(com.pasiflonet.mobile.utils.TdLibManager.lastTarget, com.pasiflonet.mobile.utils.TdLibManager.lastCaption, finalOutputPath, isVideo); onComplete(true) } catch (e: Exception) { onComplete(false) }
+            try { 
+                safeInput.copyTo(File(outputPath), overwrite = true)
+                onComplete(true) 
+            } catch (e: Exception) { onComplete(false) }
             return
         }
 
@@ -111,8 +113,6 @@ object MediaProcessor {
                 wStr = pixelW.toString(); hStr = pixelH.toString(); xStr = pixelX.toString(); yStr = pixelY.toString()
             }
             
-            // התיקון הקריטי: scale=trunc(iw/15/2)*2:-2
-            // זה מבטיח שתמיד נקבל מספר זוגי של פיקסלים, אחרת הוידאו קורס
             filter.append("$currentStream split=2[$splitName][$cropName];")
             filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/15/2)*2:-2,scale=$wStr:$hStr[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream;")
@@ -139,20 +139,17 @@ object MediaProcessor {
             args.add("-c:v"); args.add("libx264")
             args.add("-preset"); args.add("ultrafast")
             args.add("-crf"); args.add("28")
-            
-            // התיקון השני: פורמט פיקסלים אוניברסלי
-            args.add("-pix_fmt"); args.add("yuv420p")
-            
+            args.add("-pix_fmt"); args.add("yuv420p") // התיקון לצבעי הוידאו נשמר כאן
             args.add("-c:a"); args.add("copy")
         } else {
             args.add("-q:v"); args.add("5")
         }
-        args.add(finalOutputPath)
+        args.add(outputPath)
 
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
             if (ReturnCode.isSuccess(session.returnCode)) {
-                 TdLibManager.sendFinalMessage(com.pasiflonet.mobile.utils.TdLibManager.lastTarget, com.pasiflonet.mobile.utils.TdLibManager.lastCaption, finalOutputPath, isVideo)
+                // רק מדווחים שהצלחנו, לא שולחים מכאן!
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString

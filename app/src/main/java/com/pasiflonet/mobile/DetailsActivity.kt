@@ -109,37 +109,23 @@ class DetailsActivity : AppCompatActivity() {
             else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
         }
 
-        // לוגיקת גרירת הלוגו - מתוקנת עם ConstraintLayout
         b.ivDraggableLogo.setOnTouchListener { view, event ->
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
             
             val params = view.layoutParams as ConstraintLayout.LayoutParams
-            
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    dX = view.x - event.rawX
-                    dY = view.y - event.rawY
-                }
+                MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }
                 MotionEvent.ACTION_MOVE -> {
-                    // עדכון ה-Bias במקום X/Y אבסולוטיים כדי לשמור על יחס תקין
                     val newX = event.rawX + dX
                     val newY = event.rawY + dY
-                    
-                    // המרה ל-Bias (בין 0 ל-1) ביחס לתמונה
                     val parentW = b.ivPreview.width.toFloat()
                     val parentH = b.ivPreview.height.toFloat()
-                    
-                    // חישוב המרכז החדש של הלוגו
                     val centerX = newX + (view.width / 2f) - b.ivPreview.left
                     val centerY = newY + (view.height / 2f) - b.ivPreview.top
-                    
                     var biasX = centerX / parentW
                     var biasY = centerY / parentH
-                    
-                    // גבולות גזרה
                     if (biasX < 0) biasX = 0f; if (biasX > 1) biasX = 1f
                     if (biasY < 0) biasY = 0f; if (biasY > 1) biasY = 1f
-                    
                     params.horizontalBias = biasX
                     params.verticalBias = biasY
                     view.layoutParams = params
@@ -150,7 +136,6 @@ class DetailsActivity : AppCompatActivity() {
 
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                // שינוי גודל ה-View עצמו
                 val scale = 0.5f + (p / 50f) 
                 b.ivDraggableLogo.scaleX = scale
                 b.ivDraggableLogo.scaleY = scale
@@ -170,8 +155,10 @@ class DetailsActivity : AppCompatActivity() {
             val target = prefs.getString("target_username", "") ?: ""
             if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Set Target Channel in Settings!", Toast.LENGTH_LONG).show(); return@launch }
             
+            val caption = b.etCaption.text.toString()
+
             if (!b.swIncludeMedia.isChecked) {
-                TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), null, false)
+                TdLibManager.sendFinalMessage(target, caption, null, false)
                 finish()
                 return@launch
             }
@@ -179,13 +166,9 @@ class DetailsActivity : AppCompatActivity() {
             val finalPath = thumbPath
             if (finalPath == null || !File(finalPath).exists()) { Toast.makeText(this@DetailsActivity, "Wait for HD...", Toast.LENGTH_SHORT).show(); return@launch }
 
-            // חישוב מיקום יחסי של הלוגו - מדוייק עכשיו
             val params = b.ivDraggableLogo.layoutParams as ConstraintLayout.LayoutParams
-            val lX = params.horizontalBias // 0.0 עד 1.0 (מרכז הלוגו)
-            val lY = params.verticalBias   // 0.0 עד 1.0 (מרכז הלוגו)
-            
-            // חישוב גודל יחסי: כמה רוחב הלוגו תופס מסך התמונה?
-            // זה החישוב החדש שפותר את בעיית ה"לוגו הענק"
+            val lX = params.horizontalBias
+            val lY = params.verticalBias
             val logoVisualWidth = b.ivDraggableLogo.width * b.ivDraggableLogo.scaleX
             val imageVisualWidth = b.ivPreview.width.toFloat()
             val relativeWidth = logoVisualWidth / imageVisualWidth
@@ -193,22 +176,36 @@ class DetailsActivity : AppCompatActivity() {
             val logoUriStr = prefs.getString("logo_uri", null)
             val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
 
+            // הגדרת נתיב יציאה ברור
+            val outputPath = File(cacheDir, "processed_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
+
+            Toast.makeText(this@DetailsActivity, "Processing...", Toast.LENGTH_SHORT).show()
+
             MediaProcessor.processContent(
                 context = this@DetailsActivity,
                 inputPath = finalPath,
-                outputPath = File(cacheDir, "out.mp4").absolutePath, // Path is dummy, handled inside
+                outputPath = outputPath,
                 isVideo = isVideo,
                 rects = b.drawingView.rects.toList(),
                 logoUri = logoUri,
                 lX = lX, lY = lY,
-                lRelWidth = relativeWidth, // שולחים רוחב יחסי במקום סקייל שרירותי
+                lRelWidth = relativeWidth,
                 onComplete = { success ->
                     if (success) {
-                        runOnUiThread { Toast.makeText(this@DetailsActivity, "Sent!", Toast.LENGTH_SHORT).show(); finish() }
+                        // השינוי הגדול: השליחה מתבצעת כאן, בתוך DetailsActivity
+                        // כי כאן יש לנו גישה ל-TdLibManager
+                        lifecycleScope.launch {
+                            TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
+                            runOnUiThread { 
+                                Toast.makeText(this@DetailsActivity, "Sent!", Toast.LENGTH_SHORT).show()
+                                finish() 
+                            }
+                        }
+                    } else {
+                         // אם נכשל - הודעה כבר הוצגה ב-MediaProcessor
                     }
                 }
             )
-            Toast.makeText(this@DetailsActivity, "Sending...", Toast.LENGTH_SHORT).show()
         }
     }
 }
