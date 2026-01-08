@@ -26,7 +26,6 @@ object MediaProcessor {
         return String.format(Locale.US, "%.4f", value)
     }
 
-    // פונקציה חדשה: מודדת את רוחב וגובה הקובץ לפני העריכה
     private fun getDimensions(path: String, isVideo: Boolean): Pair<Int, Int> {
         return try {
             if (isVideo) {
@@ -43,7 +42,7 @@ object MediaProcessor {
                 Pair(options.outWidth, options.outHeight)
             }
         } catch (e: Exception) {
-            Pair(0, 0) // במקרה חירום נחזור לשיטה הישנה
+            Pair(0, 0)
         }
     }
 
@@ -88,9 +87,8 @@ object MediaProcessor {
             } catch (e: Exception) { }
         }
 
-        // 1. השגת מידות מדויקות
         val (width, height) = getDimensions(safeInput.absolutePath, isVideo)
-        val useMath = (width == 0 || height == 0) // אם נכשלנו במדידה, נשתמש בשיטה הישנה
+        val useMath = (width == 0 || height == 0)
 
         val args = mutableListOf<String>()
         args.add("-y")
@@ -105,29 +103,32 @@ object MediaProcessor {
         
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
+            // התיקון הגדול: הוספת האינדקס i לשמות כדי למנוע כפילויות
+            // main -> main_0, main_1...
+            val splitName = "main_$i"
+            val cropName = "tocrop_$i"
+            val blurName = "blurred_$i"
             
             val cropCmd = if (useMath) {
-                // שיטה ישנה (גיבוי)
                 val w = "trunc(iw*${fmt(r.right-r.left)})"
                 val h = "trunc(ih*${fmt(r.bottom-r.top)})"
                 val x = "trunc(iw*${fmt(r.left)})"
                 val y = "trunc(ih*${fmt(r.top)})"
                 "crop=$w:$h:$x:$y"
             } else {
-                // שיטה חדשה: מספרים קבועים ושלמים (בטוח ב-100%)
                 var pixelW = (width * (r.right - r.left)).toInt()
                 var pixelH = (height * (r.bottom - r.top)).toInt()
                 var pixelX = (width * r.left).toInt()
                 var pixelY = (height * r.top).toInt()
                 
-                // וידוא שהמספרים זוגיים (קריטי לוידאו)
                 if (pixelW % 2 != 0) pixelW--
                 if (pixelH % 2 != 0) pixelH--
                 
                 "crop=$pixelW:$pixelH:$pixelX:$pixelY"
             }
             
-            filter.append("$currentStream split=2[main][tocrop];[tocrop]$cropCmd,boxblur=10:1[blurred];[main][blurred]overlay=${if(useMath) "trunc(iw*${fmt(r.left)})" else (width*r.left).toInt()}:${if(useMath) "trunc(ih*${fmt(r.top)})" else (height*r.top).toInt()}$nextStream;")
+            // שרשור הפקודה עם השמות הייחודיים
+            filter.append("$currentStream split=2[$splitName][$cropName];[$cropName]$cropCmd,boxblur=10:1[$blurName];[$splitName][$blurName]overlay=${if(useMath) "trunc(iw*${fmt(r.left)})" else (width*r.left).toInt()}:${if(useMath) "trunc(ih*${fmt(r.top)})" else (height*r.top).toInt()}$nextStream;")
             currentStream = nextStream
         }
 
@@ -135,8 +136,6 @@ object MediaProcessor {
             val s = fmt(lScale)
             val lx = fmt(lX)
             val ly = fmt(lY)
-            
-            // המרה למספרים שלמים גם בלוגו
             filter.append("[1:v]scale=trunc(iw*$s):-1[logo];")
             filter.append("$currentStream[logo]overlay=x=trunc(W*$lx):y=trunc(H*$ly)[v_done]")
         } else {
@@ -159,7 +158,6 @@ object MediaProcessor {
 
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
-            
             if (ReturnCode.isSuccess(session.returnCode)) {
                 onComplete(true)
             } else {
