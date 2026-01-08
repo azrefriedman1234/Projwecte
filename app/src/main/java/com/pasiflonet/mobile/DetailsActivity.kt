@@ -3,13 +3,11 @@ package com.pasiflonet.mobile
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Matrix  
+import android.graphics.Matrix
 import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
-import android.os.PowerManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.ViewTreeObserver
@@ -27,14 +25,12 @@ import com.pasiflonet.mobile.utils.MediaProcessor
 import com.pasiflonet.mobile.utils.ImageUtils
 import com.pasiflonet.mobile.utils.TranslationManager
 import com.pasiflonet.mobile.utils.BlurRect
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
 import java.io.File
 import java.io.FileOutputStream
 import java.util.ArrayList
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 class DetailsActivity : AppCompatActivity() {
     private lateinit var b: ActivityDetailsBinding
@@ -44,7 +40,6 @@ class DetailsActivity : AppCompatActivity() {
     private var thumbId = 0
     private var imageBounds = RectF()
     private var savedLogoRelX = 0.5f; private var savedLogoRelY = 0.5f; private var savedLogoScale = 1.0f
-    private var dX = 0f; private var dY = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,36 +75,33 @@ class DetailsActivity : AppCompatActivity() {
     private fun saveDraft() { try { getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().putString("draft_caption", b.etCaption.text.toString()).putString("draft_path", thumbPath).putBoolean("draft_is_video", isVideo).putInt("draft_file_id", fileId).apply() } catch (e: Exception) {} }
     private fun restoreDraft(): Boolean { val prefs = getSharedPreferences("draft_prefs", MODE_PRIVATE); val path = prefs.getString("draft_path", null); if (path != null || prefs.getString("draft_caption", "")!!.isNotEmpty()) { thumbPath = path; isVideo = prefs.getBoolean("draft_is_video", false); fileId = prefs.getInt("draft_file_id", 0); b.etCaption.setText(prefs.getString("draft_caption", "")); if (path != null) loadSharpImage(path); return true }; return false }
     private fun clearDraft() { getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().clear().apply() }
+    private fun safeToast(msg: String) { runOnUiThread { if (!isFinishing && !isDestroyed) Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() } }
     
-    // מנגנון הודעות בטוח שלא קורס
-    private fun safeToast(msg: String) { 
-        runOnUiThread { 
-            if (!isFinishing && !isDestroyed) {
-                Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() 
-            }
-        } 
-    }
-    
-    private fun startHDImageHunter(targetId: Int) { 
-        TdLibManager.downloadFile(targetId)
-        lifecycleScope.launch(Dispatchers.IO) { 
-            for (i in 0..20) { 
-                val realPath = TdLibManager.getFilePath(targetId)
-                if (realPath != null && File(realPath).exists() && File(realPath).length() > 1000) { 
-                    withContext(Dispatchers.Main) { 
-                        if(!isFinishing) { thumbPath = realPath; loadSharpImage(realPath); saveDraft() } 
-                    }
-                    break 
-                }; delay(500) 
-            } 
-        } 
-    }
+    private fun startHDImageHunter(targetId: Int) { TdLibManager.downloadFile(targetId); lifecycleScope.launch(Dispatchers.IO) { for (i in 0..20) { val realPath = TdLibManager.getFilePath(targetId); if (realPath != null && File(realPath).exists() && File(realPath).length() > 1000) { withContext(Dispatchers.Main) { if(!isFinishing) { thumbPath = realPath; loadSharpImage(realPath); saveDraft() } }; break }; delay(500) } } }
     private fun loadSharpImage(path: String) { b.ivPreview.load(File(path)) { memoryCachePolicy(CachePolicy.DISABLED); diskCachePolicy(CachePolicy.DISABLED); crossfade(true); listener(onSuccess = { _, _ -> b.ivPreview.post { calculateMatrixBounds() } }) } }
 
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f; calculateMatrixBounds() }
         b.btnModeLogo.setOnClickListener { b.drawingView.isBlurMode = false; b.ivDraggableLogo.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f; b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.post { calculateMatrixBounds(); restoreLogoPosition() } }
-        b.ivDraggableLogo.setOnTouchListener { view, event -> if (b.drawingView.isBlurMode) return@setOnTouchListener false; when (event.action) { android.view.MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }; android.view.MotionEvent.ACTION_MOVE -> { var newX = event.rawX + dX; var newY = event.rawY + dY; if (imageBounds.width() > 0) { if(newX < imageBounds.left) newX = imageBounds.left; if(newX + view.width > imageBounds.right) newX = imageBounds.right - view.width; if(newY < imageBounds.top) newY = imageBounds.top; if(newY + view.height > imageBounds.bottom) newY = imageBounds.bottom - view.height; savedLogoRelX = (newX - imageBounds.left) / imageBounds.width(); savedLogoRelY = (newY - imageBounds.top) / imageBounds.height() }; view.x = newX; view.y = newY } }; true }
+        
+        var dX = 0f; var dY = 0f
+        b.ivDraggableLogo.setOnTouchListener { view, event -> 
+            if (b.drawingView.isBlurMode) return@setOnTouchListener false
+            when (event.action) { 
+                android.view.MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }
+                android.view.MotionEvent.ACTION_MOVE -> { 
+                    var newX = event.rawX + dX; var newY = event.rawY + dY
+                    if (imageBounds.width() > 0) { 
+                        if(newX < imageBounds.left) newX = imageBounds.left; if(newX + view.width > imageBounds.right) newX = imageBounds.right - view.width
+                        if(newY < imageBounds.top) newY = imageBounds.top; if(newY + view.height > imageBounds.bottom) newY = imageBounds.bottom - view.height
+                        savedLogoRelX = (newX - imageBounds.left) / imageBounds.width()
+                        savedLogoRelY = (newY - imageBounds.top) / imageBounds.height() 
+                    }
+                    view.x = newX; view.y = newY
+                } 
+            }
+            true 
+        }
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener { override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { savedLogoScale = 0.5f + (p / 50f); b.ivDraggableLogo.scaleX = savedLogoScale; b.ivDraggableLogo.scaleY = savedLogoScale }; override fun onStartTrackingTouch(sb: SeekBar?) {}; override fun onStopTrackingTouch(sb: SeekBar?) {} })
         b.btnTranslate.setOnClickListener { lifecycleScope.launch { val t = b.etCaption.text.toString(); if (t.isNotEmpty()) { b.etCaption.setText(TranslationManager.translateToHebrew(t)); saveDraft() } } }
         b.btnSend.setOnClickListener { performSafeSend() }
@@ -133,33 +125,30 @@ class DetailsActivity : AppCompatActivity() {
                 if (finalPath == null || !File(finalPath).exists()) { if (fileId != 0) { TdLibManager.downloadFile(fileId); Thread.sleep(2000); finalPath = TdLibManager.getFilePath(fileId) } }
                 if (finalPath == null || !File(finalPath).exists()) { withContext(Dispatchers.Main) { safeToast("File not found!"); if (!isFinishing) { b.loadingOverlay.visibility = android.view.View.GONE; b.btnSend.isEnabled = true } }; return@launch }
 
-                safeToast(if(isVideo) "Processing Video..." else "Processing Image...")
+                safeToast(if(isVideo) "Processing..." else "Processing Image...")
                 
                 val rects = ArrayList<BlurRect>()
                 for (r in b.drawingView.rects) rects.add(BlurRect(r.left, r.top, r.right, r.bottom))
                 
                 var logoUri: Uri? = null
                 if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE) {
-                     val d = b.ivDraggableLogo.drawable
-                     if (d is BitmapDrawable) { val f = File(cacheDir, "temp_logo.png"); val o = FileOutputStream(f); d.bitmap.compress(Bitmap.CompressFormat.PNG, 100, o); o.close(); logoUri = Uri.fromFile(f) }
+                     try {
+                         val d = b.ivDraggableLogo.drawable
+                         if (d is BitmapDrawable) { val f = File(cacheDir, "temp_logo.png"); val o = FileOutputStream(f); d.bitmap.compress(Bitmap.CompressFormat.PNG, 100, o); o.close(); logoUri = Uri.fromFile(f) }
+                     } catch(e: Exception) { Log.e("Logo", "Failed to save logo", e) }
                 }
                 val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
-                val relW = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
+                val relW = if (imageBounds.width() > 0) (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width() else 0.2f
 
-                // כאן הקסם: שימוש ב-MediaProcessor המעודכן לוידאו וב-ImageUtils לתמונות
+                // --- השינוי הגדול: שימוש ב-suspendCoroutine במקום wait/notify ---
                 val success = if (isVideo) {
-                    var vidResult = false
-                    val lock = Object()
-                    MediaProcessor.processContent(applicationContext, finalPath, outPath, true, rects, logoUri, savedLogoRelX, savedLogoRelY, relW) { vidResult = it; synchronized(lock) { lock.notify() } }
-                    synchronized(lock) { lock.wait(120000) }
-                    vidResult
+                    processVideoSuspending(applicationContext, finalPath, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
                 } else {
                     ImageUtils.processImage(applicationContext, finalPath, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
                 }
 
                 withContext(Dispatchers.Main) {
                     if (isFinishing || isDestroyed) return@withContext
-                    
                     if (success) { 
                         safeToast("Sending..."); 
                         GlobalScope.launch(Dispatchers.IO) { TdLibManager.sendFinalMessage(target, caption, outPath, isVideo) }
@@ -173,6 +162,15 @@ class DetailsActivity : AppCompatActivity() {
                     }
                 }
             } catch (e: Exception) { withContext(Dispatchers.Main) { safeToast("Error: ${e.message}"); if (!isFinishing) { b.loadingOverlay.visibility = android.view.View.GONE; b.btnSend.isEnabled = true } } }
+        }
+    }
+
+    // פונקציית עזר להמתנה בטוחה ל-FFmpeg
+    private suspend fun processVideoSuspending(
+        ctx: Context, input: String, output: String, rects: List<BlurRect>, logo: Uri?, lx: Float, ly: Float, lw: Float
+    ): Boolean = suspendCoroutine { cont ->
+        MediaProcessor.processContent(ctx, input, output, true, rects, logo, lx, ly, lw) { result ->
+            cont.resume(result)
         }
     }
 }
