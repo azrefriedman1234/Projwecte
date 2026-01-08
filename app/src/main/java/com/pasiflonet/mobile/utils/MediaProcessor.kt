@@ -138,40 +138,41 @@ object MediaProcessor {
             currentStream = "[v_pre_final]"
         }
 
-        // --- שלב סופי (הגנה וחידוד) ---
+        // --- שלב סופי ---
         if (filter.isNotEmpty()) filter.append(";")
         
         if (isVideo) {
-            // הגנת זוגיות לוידאו
+            // הגנת זוגיות
             filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
         } else {
-            // חידוד לתמונות
+            // חידוד תמונה
             filter.append("${currentStream}unsharp=5:5:1.0:5:5:0.0[v_done]")
         }
 
         args.add("-filter_complex"); args.add(filter.toString())
         
-        // מיפוי וידאו
         args.add("-map"); args.add("[v_done]")
         
         if (isVideo) {
-            // --- התיקון הגדול לאודיו ---
-            // המיפוי 0:a? אומר: קח את האודיו מהקובץ הראשון (0) רק אם הוא קיים (?)
-            // אם אין אודיו, FFmpeg פשוט יצור וידאו אילם בלי לקרוס
+            // הגנת אודיו: קח אודיו רק אם קיים (?)
             args.add("-map"); args.add("0:a?")
             
-            args.add("-c:v"); args.add("libx264")
-            args.add("-preset"); args.add("ultrafast")
-            args.add("-crf"); args.add("23")
+            // --- התיקון הקריטי: החלפת המקודד ---
+            // במקום libx264 שחסר, משתמשים ב-mpeg4 שקיים תמיד
+            args.add("-c:v"); args.add("mpeg4")
+            
+            // איכות גבוהה למקודד mpeg4 (טווח 2-31, 2 הכי טוב)
+            args.add("-q:v"); args.add("2")
+            
             args.add("-pix_fmt"); args.add("yuv420p")
             
-            // חזרה להעתקה בטוחה (copy) במקום קידוד מחדש
-            args.add("-c:a"); args.add("copy")
-            
-            // דגלים לתאימות מקסימלית (Telegram Friendly)
-            args.add("-movflags"); args.add("+faststart")
+            // המרת אודיו ל-AAC כדי למנוע התנגשויות
+            args.add("-c:a"); args.add("aac")
+            args.add("-b:a"); args.add("128k")
+            args.add("-ac"); args.add("2")
         } else {
-            args.add("-q:v"); args.add("1")
+            // PNG לתמונות (איכות מושלמת)
+            args.add("-c:v"); args.add("png")
         }
         args.add(finalOutputPath)
 
@@ -182,7 +183,7 @@ object MediaProcessor {
             } else {
                 val logs = session.allLogsAsString
                 val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
-                showToast(context, "❌ Fix Failed!\n$errorMsg")
+                showToast(context, "❌ Encoder Error: $errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
