@@ -58,14 +58,9 @@ object MediaProcessor {
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
         catch (e: Exception) { showToast(context, "Copy Failed"); onComplete(false); return }
 
-        // מקרה קצה: אין עריכה
-        if (rects.isEmpty() && logoUri == null) {
-            try { 
-                safeInput.copyTo(File(finalOutputPath), overwrite = true)
-                onComplete(true) 
-            } catch (e: Exception) { onComplete(false) }
-            return
-        }
+        // --- שינוי קריטי: לא מדלגים לעולם אם הפונקציה נקראה! ---
+        // אם הגענו לפה, סימן שהמשתמש ביקש עריכה.
+        // גם אם הרשימות ריקות, נעביר דרך FFmpeg כדי "לנקות" את הקובץ.
 
         var logoPath: String? = null
         if (logoUri != null) {
@@ -92,6 +87,7 @@ object MediaProcessor {
 
         val filter = StringBuilder()
         var currentStream = "[0:v]"
+        var filterChanged = false
         
         // --- שלב הטשטוש ---
         rects.forEachIndexed { i, r ->
@@ -120,6 +116,7 @@ object MediaProcessor {
             filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/5/2)*2:-2:flags=lanczos,scale=$wStr:$hStr:flags=lanczos[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream")
             currentStream = nextStream
+            filterChanged = true
         }
 
         // --- שלב הלוגו ---
@@ -136,42 +133,44 @@ object MediaProcessor {
             filter.append("[1:v]scale=$targetLogoW:-1:flags=lanczos[logo];")
             filter.append("$currentStream[logo]overlay=x=$finalX:y=$finalY[v_pre_final]")
             currentStream = "[v_pre_final]"
+            filterChanged = true
         }
 
-        // --- שלב סופי ---
-        if (filter.isNotEmpty()) filter.append(";")
-        
-        if (isVideo) {
-            // הגנת זוגיות
-            filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
+        // --- סיום שרשרת ---
+        if (filterChanged) {
+            if (filter.isNotEmpty()) filter.append(";")
+            // הגנה לוידאו
+            if (isVideo) {
+                 filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
+            } else {
+                 // אין חידוד לתמונות PNG - הן מושלמות כמו שהן
+                 filter.append("${currentStream}null[v_done]")
+            }
+            
+            args.add("-filter_complex"); args.add(filter.toString())
+            args.add("-map"); args.add("[v_done]")
         } else {
-            // חידוד תמונה
-            filter.append("${currentStream}unsharp=5:5:1.0:5:5:0.0[v_done]")
+            // אם לא היו פילטרים בכלל (רק העתקה), עדיין נריץ דרך המקודד
+            // זה יבטיח שהקובץ יעובד
         }
 
-        args.add("-filter_complex"); args.add(filter.toString())
-        
-        args.add("-map"); args.add("[v_done]")
         
         if (isVideo) {
-            // הגנת אודיו: קח אודיו רק אם קיים (?)
+            // הגנת אודיו
             args.add("-map"); args.add("0:a?")
             
-            // --- התיקון הקריטי: החלפת המקודד ---
-            // במקום libx264 שחסר, משתמשים ב-mpeg4 שקיים תמיד
+            // מקודד MPEG4 - הכי בטוח
             args.add("-c:v"); args.add("mpeg4")
-            
-            // איכות גבוהה למקודד mpeg4 (טווח 2-31, 2 הכי טוב)
             args.add("-q:v"); args.add("2")
-            
             args.add("-pix_fmt"); args.add("yuv420p")
             
-            // המרת אודיו ל-AAC כדי למנוע התנגשויות
+            // המרת אודיו
             args.add("-c:a"); args.add("aac")
             args.add("-b:a"); args.add("128k")
             args.add("-ac"); args.add("2")
         } else {
-            // PNG לתמונות (איכות מושלמת)
+            // --- התיקון לאיכות תמונה ---
+            // מעבר ל-PNG! שום דחיסה, שום איבוד איכות.
             args.add("-c:v"); args.add("png")
         }
         args.add(finalOutputPath)
@@ -183,7 +182,7 @@ object MediaProcessor {
             } else {
                 val logs = session.allLogsAsString
                 val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
-                showToast(context, "❌ Encoder Error: $errorMsg")
+                showToast(context, "❌ Error: $errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
