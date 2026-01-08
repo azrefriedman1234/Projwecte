@@ -16,14 +16,11 @@ import java.util.Locale
 
 object MediaProcessor {
 
+    // פונקציה להצגת הודעות גם כשהאקטיביטי כבר נסגר
     private fun showToast(context: Context, msg: String) {
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
         }
-    }
-
-    private fun fmt(value: Float): String {
-        return String.format(Locale.US, "%.4f", value)
     }
 
     private fun getDimensions(path: String, isVideo: Boolean): Pair<Int, Int> {
@@ -57,13 +54,15 @@ object MediaProcessor {
         onComplete: (Boolean) -> Unit
     ) {
         val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
-        
-        try { File(inputPath).copyTo(safeInput, overwrite = true) } 
-        catch (e: Exception) { onComplete(false); return }
+        val finalOutputPath = if (!outputPath.endsWith(".mp4") && isVideo) "$outputPath.mp4" else outputPath
 
+        try { File(inputPath).copyTo(safeInput, overwrite = true) } 
+        catch (e: Exception) { showToast(context, "Copy Failed"); onComplete(false); return }
+
+        // מקרה קצה: אין עריכה
         if (rects.isEmpty() && logoUri == null) {
             try { 
-                safeInput.copyTo(File(outputPath), overwrite = true)
+                safeInput.copyTo(File(finalOutputPath), overwrite = true)
                 onComplete(true) 
             } catch (e: Exception) { onComplete(false) }
             return
@@ -83,8 +82,7 @@ object MediaProcessor {
         }
 
         val (width, height) = getDimensions(safeInput.absolutePath, isVideo)
-        val useMath = (width == 0 || height == 0)
-
+        
         val args = mutableListOf<String>()
         args.add("-y")
         args.add("-i"); args.add(safeInput.absolutePath)
@@ -100,29 +98,35 @@ object MediaProcessor {
             val nextStream = "[v$i]"
             val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
             
-            var pixelW = 0; var pixelH = 0; var pixelX = 0; var pixelY = 0
-            if (!useMath) {
-                pixelW = (width * (r.right - r.left)).toInt()
-                pixelH = (height * (r.bottom - r.top)).toInt()
-                pixelX = (width * r.left).toInt()
-                pixelY = (height * r.top).toInt()
-                
-                if (pixelX + pixelW > width) pixelW = width - pixelX
-                if (pixelY + pixelH > height) pixelH = height - pixelY
-                
-                if (pixelW % 2 != 0) pixelW--
-                if (pixelH % 2 != 0) pixelH--
-                if (pixelX % 2 != 0) pixelX--
-                if (pixelY % 2 != 0) pixelY--
-                
-                if (pixelW < 4) pixelW = 4
-                if (pixelH < 4) pixelH = 4
-            }
+            // חישוב גודל הקרופ בפיקסלים
+            var pixelW = (width * (r.right - r.left)).toInt()
+            var pixelH = (height * (r.bottom - r.top)).toInt()
+            var pixelX = (width * r.left).toInt()
+            var pixelY = (height * r.top).toInt()
             
-            val wStr = pixelW.toString(); val hStr = pixelH.toString(); val xStr = pixelX.toString(); val yStr = pixelY.toString()
+            // הגנה: לא לחרוג מגבולות
+            if (pixelX + pixelW > width) pixelW = width - pixelX
+            if (pixelY + pixelH > height) pixelH = height - pixelY
             
+            // הגנה: מספרים זוגיים בלבד (קריטי לוידאו)
+            if (pixelW % 2 != 0) pixelW--
+            if (pixelH % 2 != 0) pixelH--
+            if (pixelX % 2 != 0) pixelX--
+            if (pixelY % 2 != 0) pixelY--
+            
+            if (pixelW < 4) pixelW = 4
+            if (pixelH < 4) pixelH = 4
+
+            val wStr = pixelW.toString()
+            val hStr = pixelH.toString()
+            val xStr = pixelX.toString()
+            val yStr = pixelY.toString()
+            
+            // התיקון הגדול לקריסות 500x500:
+            // הפקודה scale=trunc(iw/4/2)*2:-2 מבטיחה שהתוצאה של ההקטנה תהיה זוגית.
+            // אם היינו סתם עושים /4, 500/4 = 125 -> אי זוגי -> קריסה.
             filter.append("$currentStream split=2[$splitName][$cropName];")
-            filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=iw/4:-1:flags=bicubic,scale=$wStr:$hStr:flags=bicubic[$blurName];")
+            filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/4/2)*2:-2:flags=bicubic,scale=$wStr:$hStr:flags=bicubic[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream;")
             currentStream = nextStream
         }
@@ -130,11 +134,10 @@ object MediaProcessor {
         if (logoPath != null) {
             var targetLogoW = (width * lRelWidth).toInt()
             if (targetLogoW % 2 != 0) targetLogoW--
-            if (targetLogoW < 10) targetLogoW = 10 
+            if (targetLogoW < 4) targetLogoW = 4
 
             filter.append("[1:v]scale=$targetLogoW:-1[logo];")
             
-            // חישוב מיקום ישיר: lX הוא האחוז מהפינה השמאלית. פשוט מכפילים ברוחב.
             val finalX = (width * lX).toInt()
             val finalY = (height * lY).toInt()
 
@@ -153,19 +156,20 @@ object MediaProcessor {
             args.add("-pix_fmt"); args.add("yuv420p")
             args.add("-c:a"); args.add("copy")
         } else {
-            // התיקון לאיכות: שמירה כ-PNG (ללא דחיסה בכלל!)
             args.add("-c:v"); args.add("png")
         }
-        args.add(outputPath)
+        args.add(finalOutputPath)
 
+        // ביצוע העריכה
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
             if (ReturnCode.isSuccess(session.returnCode)) {
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
-                val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
-                showToast(context, "❌ Fix Failed!\n$errorMsg")
+                val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
+                showToast(context, "❌ Processing Error: $errorMsg")
+                Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
         }

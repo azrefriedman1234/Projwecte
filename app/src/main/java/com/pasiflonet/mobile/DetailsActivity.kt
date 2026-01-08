@@ -19,6 +19,7 @@ import com.pasiflonet.mobile.utils.MediaProcessor
 import com.pasiflonet.mobile.utils.TranslationManager
 import com.pasiflonet.mobile.utils.ViewUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -171,64 +172,60 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun sendData() {
-        lifecycleScope.launch {
-            val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
-            val target = prefs.getString("target_username", "") ?: ""
-            if (target.isEmpty()) { Toast.makeText(this@DetailsActivity, "Set Target Channel!", Toast.LENGTH_SHORT).show(); return@launch }
-            
-            val caption = b.etCaption.text.toString()
+        // איסוף כל הנתונים לפני הסגירה
+        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+        val target = prefs.getString("target_username", "") ?: ""
+        if (target.isEmpty()) { Toast.makeText(this, "Set Target!", Toast.LENGTH_SHORT).show(); return }
+        
+        val caption = b.etCaption.text.toString()
+        val includeMedia = b.swIncludeMedia.isChecked
+        val logoUriStr = prefs.getString("logo_uri", null)
+        val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
+        
+        val finalPath = thumbPath
+        if (includeMedia && (finalPath == null || !File(finalPath).exists())) { 
+            Toast.makeText(this, "Media not ready!", Toast.LENGTH_SHORT).show(); return 
+        }
 
-            if (!b.swIncludeMedia.isChecked) {
+        imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
+        val logoX = b.ivDraggableLogo.x - imageBounds.left
+        val logoY = b.ivDraggableLogo.y - imageBounds.top
+        val relX = logoX / imageBounds.width()
+        val relY = logoY / imageBounds.height()
+        val relativeWidth = (b.ivDraggableLogo.width * b.ivDraggableLogo.scaleX) / imageBounds.width()
+        val rects = b.drawingView.getRectsRelative(imageBounds)
+
+        // אפקט "שגר ושכח":
+        // אנחנו משתמשים ב-GlobalScope (או סקופ שלא קשור לאקטיביטי)
+        // כדי שהתהליך ימשיך גם אחרי שהמסך נסגר.
+        // (בדרך כלל לא מומלץ, אבל כאן זה בדיוק מה שאתה רוצה - שהאפליקציה "תסתדר לבד")
+        GlobalScope.launch(Dispatchers.IO) {
+            if (!includeMedia) {
                 TdLibManager.sendFinalMessage(target, caption, null, false)
-                finish()
-                return@launch
-            }
+            } else {
+                val extension = if(isVideo) "mp4" else "png"
+                val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
-            val finalPath = thumbPath
-            if (finalPath == null || !File(finalPath).exists()) { Toast.makeText(this@DetailsActivity, "Wait for HD...", Toast.LENGTH_SHORT).show(); return@launch }
-
-            imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
-            
-            // --- חישוב מיקום ישיר (Top-Left) ---
-            // במקום לחשב מרכז, אנחנו מחשבים את הפינה השמאלית של הלוגו ביחס לתמונה
-            // זה מבטל את כל הבעיות של גודל לוגו משתנה
-            val logoX = b.ivDraggableLogo.x - imageBounds.left
-            val logoY = b.ivDraggableLogo.y - imageBounds.top
-            
-            // המרה לאחוזים (0.0 עד 1.0)
-            val relX = logoX / imageBounds.width()
-            val relY = logoY / imageBounds.height()
-            
-            val logoVisualWidth = b.ivDraggableLogo.width * b.ivDraggableLogo.scaleX
-            val relativeWidth = logoVisualWidth / imageBounds.width()
-
-            val logoUriStr = prefs.getString("logo_uri", null)
-            val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
-            
-            // שינוי קריטי: שמירה כ-PNG אם זה תמונה! (איכות Lossless)
-            val extension = if(isVideo) "mp4" else "png"
-            val outputPath = File(cacheDir, "processed_${System.currentTimeMillis()}.$extension").absolutePath
-
-            Toast.makeText(this@DetailsActivity, "Processing Max Quality...", Toast.LENGTH_SHORT).show()
-
-            MediaProcessor.processContent(
-                context = this@DetailsActivity,
-                inputPath = finalPath,
-                outputPath = outputPath,
-                isVideo = isVideo,
-                rects = b.drawingView.getRectsRelative(imageBounds),
-                logoUri = logoUri,
-                lX = relX, lY = relY, // שולחים קואורדינטות פינה שמאלית
-                lRelWidth = relativeWidth,
-                onComplete = { success ->
-                    if (success) {
-                        lifecycleScope.launch {
+                MediaProcessor.processContent(
+                    context = applicationContext, // חשוב: שימוש בקונטקסט של האפליקציה ולא של המסך שנסגר
+                    inputPath = finalPath!!,
+                    outputPath = outputPath,
+                    isVideo = isVideo,
+                    rects = rects,
+                    logoUri = logoUri,
+                    lX = relX, lY = relY,
+                    lRelWidth = relativeWidth,
+                    onComplete = { success ->
+                        if (success) {
                             TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
-                            runOnUiThread { Toast.makeText(this@DetailsActivity, "Sent!", Toast.LENGTH_SHORT).show(); finish() }
                         }
                     }
-                }
-            )
+                )
+            }
         }
+
+        // סגירה מיידית של המסך! המשתמש חוזר לטבלה מיד.
+        Toast.makeText(this, "Sending in background...", Toast.LENGTH_SHORT).show()
+        finish()
     }
 }
