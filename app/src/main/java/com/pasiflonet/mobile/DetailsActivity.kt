@@ -1,11 +1,13 @@
 package com.pasiflonet.mobile
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
@@ -15,6 +17,7 @@ import android.widget.ImageView
 import android.widget.SeekBar
 import android.widget.Toast
 import android.util.Log
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import coil.load
@@ -25,7 +28,11 @@ import com.pasiflonet.mobile.utils.MediaProcessor
 import com.pasiflonet.mobile.utils.ImageUtils
 import com.pasiflonet.mobile.utils.TranslationManager
 import com.pasiflonet.mobile.utils.BlurRect
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.ArrayList
@@ -40,6 +47,23 @@ class DetailsActivity : AppCompatActivity() {
     private var thumbId = 0
     private var imageBounds = RectF()
     private var savedLogoRelX = 0.5f; private var savedLogoRelY = 0.5f; private var savedLogoScale = 1.0f
+
+    // משגר בחירת לוגו
+    private val pickLogoLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                // התיקון החשוב: בקשת הרשאה קבועה לקובץ כדי שלא יעלם בפעם הבאה
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) { Log.e("Logo", "Perm error", e) }
+
+            getSharedPreferences("app_prefs", MODE_PRIVATE).edit().putString("logo_uri", uri.toString()).apply()
+            
+            b.ivDraggableLogo.load(uri)
+            b.ivDraggableLogo.visibility = android.view.View.VISIBLE
+            b.drawingView.isBlurMode = false
+            b.ivDraggableLogo.post { calculateMatrixBounds(); savedLogoRelX = 0.5f; savedLogoRelY = 0.5f; restoreLogoPosition() }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,8 +106,40 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f; calculateMatrixBounds() }
-        b.btnModeLogo.setOnClickListener { b.drawingView.isBlurMode = false; b.ivDraggableLogo.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f; b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.post { calculateMatrixBounds(); restoreLogoPosition() } }
         
+        // התיקון: כפתור לוגו חכם שבודק אם הקישור שבור
+        b.btnModeLogo.setOnClickListener { 
+            b.drawingView.isBlurMode = false
+            b.ivDraggableLogo.visibility = android.view.View.VISIBLE
+            b.ivDraggableLogo.alpha = 1.0f
+            
+            val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+            val uriStr = prefs.getString("logo_uri", null)
+            var isBroken = true
+
+            if (uriStr != null) {
+                try {
+                    val uri = Uri.parse(uriStr)
+                    // בדיקה האם הקובץ באמת קריא
+                    val inputStream = contentResolver.openInputStream(uri)
+                    inputStream?.close() // אם הצלחנו לפתוח ולסגור - הקובץ תקין
+                    
+                    b.ivDraggableLogo.load(uri)
+                    isBroken = false
+                } catch (e: Exception) {
+                    isBroken = true // נכשל בפתיחה -> קישור שבור
+                }
+            }
+
+            if (isBroken) {
+                // אם הקישור שבור או לא קיים - פותחים גלריה אוטומטית
+                safeToast("Link lost, please select logo again")
+                pickLogoLauncher.launch("image/*")
+            }
+            
+            b.ivDraggableLogo.post { calculateMatrixBounds(); restoreLogoPosition() } 
+        }
+
         var dX = 0f; var dY = 0f
         b.ivDraggableLogo.setOnTouchListener { view, event -> 
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
@@ -133,14 +189,24 @@ class DetailsActivity : AppCompatActivity() {
                 var logoUri: Uri? = null
                 if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE) {
                      try {
-                         val d = b.ivDraggableLogo.drawable
-                         if (d is BitmapDrawable) { val f = File(cacheDir, "temp_logo.png"); val o = FileOutputStream(f); d.bitmap.compress(Bitmap.CompressFormat.PNG, 100, o); o.close(); logoUri = Uri.fromFile(f) }
-                     } catch(e: Exception) { Log.e("Logo", "Failed to save logo", e) }
+                         // מנסים לטעון את הלוגו השמור
+                         val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+                         val savedUriStr = prefs.getString("logo_uri", null)
+                         if (savedUriStr != null) {
+                             val uri = Uri.parse(savedUriStr)
+                             // בדיקה שהקובץ תקין לפני שמתחילים
+                             context.contentResolver.openInputStream(uri)?.close()
+                             logoUri = uri
+                         } else {
+                             // גיבוי: נסיון לשמור מהתצוגה
+                             val d = b.ivDraggableLogo.drawable
+                             if (d is BitmapDrawable) { val f = File(cacheDir, "temp_logo.png"); val o = FileOutputStream(f); d.bitmap.compress(Bitmap.CompressFormat.PNG, 100, o); o.close(); logoUri = Uri.fromFile(f) }
+                         }
+                     } catch(e: Exception) { Log.e("Logo", "Failed to resolve logo", e) }
                 }
                 val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
                 val relW = if (imageBounds.width() > 0) (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width() else 0.2f
 
-                // --- השינוי הגדול: שימוש ב-suspendCoroutine במקום wait/notify ---
                 val success = if (isVideo) {
                     processVideoSuspending(applicationContext, finalPath, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
                 } else {
@@ -165,7 +231,6 @@ class DetailsActivity : AppCompatActivity() {
         }
     }
 
-    // פונקציית עזר להמתנה בטוחה ל-FFmpeg
     private suspend fun processVideoSuspending(
         ctx: Context, input: String, output: String, rects: List<BlurRect>, logo: Uri?, lx: Float, ly: Float, lw: Float
     ): Boolean = suspendCoroutine { cont ->
