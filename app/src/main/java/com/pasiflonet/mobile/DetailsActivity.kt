@@ -3,7 +3,7 @@ package com.pasiflonet.mobile
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Matrix // הנה ה-Import שהיה חסר!
+import android.graphics.Matrix  
 import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
