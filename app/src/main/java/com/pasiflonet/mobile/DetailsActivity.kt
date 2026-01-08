@@ -31,6 +31,8 @@ class DetailsActivity : AppCompatActivity() {
     private var isVideo = false
     private var fileId = 0
     private var thumbId = 0
+    
+    // גבולות התמונה
     private var imageBounds = RectF()
     private var dX = 0f
     private var dY = 0f
@@ -54,10 +56,10 @@ class DetailsActivity : AppCompatActivity() {
             if (targetId != 0) startImageHunter(targetId)
             else if (thumbPath != null) loadSharpImage(thumbPath!!)
             
+            // האזנה קבועה לשינויי גודל
             b.ivPreview.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
                 override fun onGlobalLayout() {
-                    imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
-                    b.drawingView.setValidBounds(imageBounds)
+                    updateImageBounds()
                 }
             })
             
@@ -65,6 +67,15 @@ class DetailsActivity : AppCompatActivity() {
             setupMediaToggle()
 
         } catch (e: Exception) { Toast.makeText(this, "Init Error: ${e.message}", Toast.LENGTH_LONG).show() }
+    }
+
+    private fun updateImageBounds() {
+        imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
+        // אם החישוב נכשל (רוחב 0), נשתמש בגודל ה-View כולו כגיבוי
+        if (imageBounds.width() <= 0 && b.ivPreview.width > 0) {
+            imageBounds.set(0f, 0f, b.ivPreview.width.toFloat(), b.ivPreview.height.toFloat())
+        }
+        b.drawingView.setValidBounds(imageBounds)
     }
 
     private fun startImageHunter(fileIdToHunt: Int) {
@@ -92,10 +103,7 @@ class DetailsActivity : AppCompatActivity() {
             diskCachePolicy(CachePolicy.DISABLED)
             crossfade(true)
             listener(onSuccess = { _, _ ->
-                b.ivPreview.post { 
-                    imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
-                    b.drawingView.setValidBounds(imageBounds)
-                }
+                b.ivPreview.post { updateImageBounds() }
             })
         }
     }
@@ -115,7 +123,11 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun setupTools() {
-        b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f }
+        b.btnModeBlur.setOnClickListener { 
+            b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f 
+            // וידוא שהגבולות מעודכנים ברגע המעבר למצב ציור
+            updateImageBounds()
+        }
         
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false
@@ -127,6 +139,7 @@ class DetailsActivity : AppCompatActivity() {
             else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
             
             b.ivDraggableLogo.post {
+                updateImageBounds()
                 b.ivDraggableLogo.x = imageBounds.centerX() - (b.ivDraggableLogo.width / 2)
                 b.ivDraggableLogo.y = imageBounds.centerY() - (b.ivDraggableLogo.height / 2)
             }
@@ -178,22 +191,30 @@ class DetailsActivity : AppCompatActivity() {
             Toast.makeText(this, "Media not ready!", Toast.LENGTH_SHORT).show(); return 
         }
 
-        imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
+        // חישוב קריטי לפני שליחה
+        updateImageBounds()
+        
         val logoX = b.ivDraggableLogo.x - imageBounds.left
         val logoY = b.ivDraggableLogo.y - imageBounds.top
         val relX = logoX / imageBounds.width()
         val relY = logoY / imageBounds.height()
         val relativeWidth = (b.ivDraggableLogo.width * b.ivDraggableLogo.scaleX) / imageBounds.width()
+        
         val rects = b.drawingView.getRectsRelative(imageBounds)
         val logoUriStr = prefs.getString("logo_uri", null)
         val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
 
-        // Fire & Forget: שולחים ברקע וסוגרים את המסך
+        // בדיקה: האם המשתמש ערך ואין זיהוי?
+        if (includeMedia && rects.isEmpty() && logoUri == null) {
+             // אם אין לוגו מוגדר והמשתמש לא צייר - זה יישלח נקי.
+             // אבל אם המשתמש חושב שהוא שם לוגו (ברירת מחדל) - זה לא יישלח.
+             // כאן המקום להזהיר, אבל נשלח בכל זאת.
+        }
+
         GlobalScope.launch(Dispatchers.IO) {
             if (!includeMedia) {
                 TdLibManager.sendFinalMessage(target, caption, null, false)
             } else {
-                // שינינו ל-JPG כי זה עובד טוב יותר עם פילטר החידוד וטלגרם
                 val extension = if(isVideo) "mp4" else "jpg"
                 val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
