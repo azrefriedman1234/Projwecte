@@ -11,7 +11,7 @@ import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
 
-data class BlurRect(val left: Float, val top: Float, val right: Float, val bottom: Float)
+// נמחק: data class BlurRect(...) - זה כבר קיים ב-Models.kt
 
 object MediaProcessor {
 
@@ -29,7 +29,7 @@ object MediaProcessor {
     ) {
         Log.d("MediaProcessor", "Starting process for: $inputPath")
 
-        // 1. אם אין עריכות (בלי לוגו ובלי טשטוש) - פשוט מעתיקים ושולחים
+        // 1. אם אין עריכות - מעתיקים
         if (blurRects.isEmpty() && logoUri == null) {
             Log.d("MediaProcessor", "No edits needed. Copying file.")
             try {
@@ -42,7 +42,7 @@ object MediaProcessor {
             return
         }
 
-        // 2. הכנת לוגו (אם יש)
+        // 2. הכנת לוגו
         var logoPath: String? = null
         if (logoUri != null) {
             try {
@@ -53,10 +53,8 @@ object MediaProcessor {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                 out.flush(); out.close()
                 logoPath = file.absolutePath
-                Log.d("MediaProcessor", "Logo saved to: $logoPath")
             } catch (e: Exception) {
                 Log.e("MediaProcessor", "Failed to prepare logo", e)
-                // ממשיכים בלי לוגו במקרה של שגיאה
             }
         }
 
@@ -70,42 +68,35 @@ object MediaProcessor {
 
         cmd.append("-filter_complex \"")
         
-        // בניית פילטר הטשטוש
         var stream = "[0:v]"
         if (blurRects.isNotEmpty()) {
             for (i in blurRects.indices) {
                 val r = blurRects[i]
-                // המרת אחוזים לפיקסלים (בערך, FFmpeg מחשב לבד)
                 val x = (r.left * 100).toInt()
                 val y = (r.top * 100).toInt()
                 val w = ((r.right - r.left) * 100).toInt()
                 val h = ((r.bottom - r.top) * 100).toInt()
                 
-                // שימוש ב-boxblur פשוט ומהיר שלא קורס
                 cmd.append("${stream}boxblur=10:1:enable='between(x,iw*$x/100,iw*${x+w}/100)*between(y,ih*$y/100,ih*${y+h}/100)'[b$i];")
                 stream = "[b$i]"
             }
         }
 
-        // בניית פילטר הלוגו
         if (logoPath != null) {
             val x = (logoRelX * 100).toInt()
             val y = (logoRelY * 100).toInt()
             val w = (logoRelW * 100).toInt()
-            // הקטנת הלוגו והלבשתו
             cmd.append("[1:v]scale=iw*$w/100:-1[logo];${stream}[logo]overlay=W*$x/100:H*$y/100")
         } else {
-            // אם אין לוגו, רק מסיימים את השרשרת (מורידים את הנקודה-פסיק האחרון)
             if (blurRects.isNotEmpty()) {
-                cmd.setLength(cmd.length - 1) // מחיקת ;
+                cmd.setLength(cmd.length - 1)
             } else {
-                cmd.append("null") // פילטר ריק אם משהו התפקשש
+                cmd.append("null")
             }
         }
 
-        cmd.append("\" ") // סגירת המרכאות של הפילטר
+        cmd.append("\" ")
 
-        // הגדרות קידוד (מהירות על חשבון איכות למניעת קריסות)
         if (isVideo) {
             cmd.append("-c:v libx264 -preset ultrafast -c:a copy ")
         }
@@ -115,25 +106,18 @@ object MediaProcessor {
         val finalCommand = cmd.toString()
         Log.d("MediaProcessor", "Executing FFmpeg: $finalCommand")
 
-        // 4. הרצה אסינכרונית עם טיפול בשגיאות
+        // 4. הרצה
         try {
             FFmpegKitConfig.enableLogCallback { log -> Log.d("FFmpeg", log.message) }
             
             FFmpegKit.executeAsync(finalCommand) { session ->
-                val returnCode = session.returnCode
-                if (ReturnCode.isSuccess(returnCode)) {
-                    Log.d("MediaProcessor", "Success!")
+                if (ReturnCode.isSuccess(session.returnCode)) {
                     onComplete(true)
                 } else {
-                    Log.e("MediaProcessor", "Failed with state ${session.state} and rc ${session.returnCode}")
-                    Log.e("MediaProcessor", "Fail logs: ${session.failStackTrace}")
-                    
-                    // מנגנון הצלה (Fallback):
-                    // אם הקידוד נכשל, מנסים פשוט להעתיק את המקור כדי שהשליחה לא תיכשל לגמרי
+                    Log.e("MediaProcessor", "FFmpeg failed. Fallback copy.")
                     try {
-                        Log.w("MediaProcessor", "Attempting fallback: Copy original file")
                         File(inputPath).copyTo(File(outputPath), overwrite = true)
-                        onComplete(true) // מדווחים הצלחה (חלקית)
+                        onComplete(true)
                     } catch (e: Exception) {
                         onComplete(false)
                     }
