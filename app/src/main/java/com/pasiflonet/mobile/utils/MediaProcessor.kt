@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
+import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
@@ -24,17 +25,9 @@ object MediaProcessor {
         logoRelW: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        Log.d("MediaProcessor", "Starting Smart Process. Video=$isVideo")
+        Log.d("MediaProcessor", "Starting FFmpeg process for Video")
 
-        // תמונות כבר טופלו בקובץ ImageUtils (לא כאן)
-        // אם בכל זאת הגענו לפה עם תמונה, נעביר ל-Fallback
-        if (!isVideo) {
-            fallbackCopy(inputPath, outputPath, onComplete)
-            return
-        }
-
-        // --- וידאו (FFmpeg) ---
-        // אם אין עריכות - מעתיקים
+        // אם אין עריכות - העתקה פשוטה
         if (blurRects.isEmpty() && logoUri == null) {
             fallbackCopy(inputPath, outputPath, onComplete)
             return
@@ -48,26 +41,21 @@ object MediaProcessor {
                 val bitmap = BitmapFactory.decodeStream(inputStream)
                 val file = File(context.cacheDir, "ffmpeg_logo_temp.png")
                 val out = FileOutputStream(file)
-                // מקטינים את הלוגו מראש כדי לא להכביד
-                val scaledLogo = if (bitmap.width > 500) Bitmap.createScaledBitmap(bitmap, 500, (500f/bitmap.width*bitmap.height).toInt(), true) else bitmap
-                scaledLogo.compress(Bitmap.CompressFormat.PNG, 100, out)
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                 out.flush(); out.close()
                 logoPath = file.absolutePath
             } catch (e: Exception) {}
         }
 
+        // בניית פקודת FFmpeg (הגרסה הקלאסית שעבדה, עם תיקון קטן למניעת קריסה)
         val cmd = StringBuilder()
         cmd.append("-y -i \"$inputPath\" ")
         if (logoPath != null) cmd.append("-i \"$logoPath\" ")
 
         cmd.append("-filter_complex \"")
+        var stream = "[0:v]"
         
-        // --- התיקון הקריטי: קודם כל מקטינים את הוידאו ל-HD (מקסימום 1280 רוחב) ---
-        // זה מבטיח שהזיכרון לא יתפוצץ, ושומר על מימדים זוגיים
-        cmd.append("[0:v]scale='min(1280,iw)':-2[scaled];")
-        var stream = "[scaled]"
-        
-        // הוספת טשטוש
+        // טשטוש
         if (blurRects.isNotEmpty()) {
             for (i in blurRects.indices) {
                 val r = blurRects[i]
@@ -78,26 +66,25 @@ object MediaProcessor {
             }
         }
 
-        // הוספת לוגו
+        // לוגו - עם אכיפת מספרים זוגיים (חובה ל-libx264)
         if (logoPath != null) {
             val x = (logoRelX * 100).toInt(); val y = (logoRelY * 100).toInt()
             val scaleFactor = logoRelW
-            // שימוש ב-main_w/main_h (W/H) שמתייחסים לוידאו *אחרי* ההקטנה
             cmd.append("[1:v]scale=trunc(iw*$scaleFactor/2)*2:-2[logo];${stream}[logo]overlay=trunc(W*$x/100/2)*2:trunc(H*$y/100/2)*2")
         } else {
             if (blurRects.isNotEmpty()) cmd.setLength(cmd.length - 1) else cmd.append("null")
         }
 
-        // קידוד מחדש בטוח
-        cmd.append("\" -c:v libx264 -preset superfast -pix_fmt yuv420p -c:a copy \"$outputPath\"")
+        // קידוד מחדש
+        cmd.append("\" -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a copy \"$outputPath\"")
 
         try {
-            Log.d("FFmpeg", "Cmd: $cmd")
+            FFmpegKitConfig.enableLogCallback { log -> Log.d("FFmpeg", log.message) }
             FFmpegKit.executeAsync(cmd.toString()) { session ->
                 if (ReturnCode.isSuccess(session.returnCode)) {
                     onComplete(true)
                 } else {
-                    Log.e("FFmpeg", "Failed: ${session.failStackTrace}")
+                    Log.e("FFmpeg", "Failed with RC: ${session.returnCode}")
                     fallbackCopy(inputPath, outputPath, onComplete)
                 }
             }
