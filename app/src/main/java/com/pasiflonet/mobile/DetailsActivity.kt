@@ -48,6 +48,9 @@ class DetailsActivity : AppCompatActivity() {
     private var savedLogoRelY = 0.5f
     private var savedLogoScale = 1.0f
     
+    private var dX = 0f
+    private var dY = 0f
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
@@ -55,7 +58,6 @@ class DetailsActivity : AppCompatActivity() {
             setContentView(b.root)
             b.ivPreview.scaleType = ImageView.ScaleType.FIT_CENTER
             
-            // טעינת נתונים (רגילה או טיוטה)
             val intentCaption = intent.getStringExtra("CAPTION")
             val intentThumb = intent.getStringExtra("THUMB_PATH")
             
@@ -82,72 +84,25 @@ class DetailsActivity : AppCompatActivity() {
         } catch (e: Exception) { safeToast("Init Error: ${e.message}") }
     }
 
-    // --- לוגיקה מקוצרת ---
-    private fun saveDraft() {
-        try { getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().putString("draft_caption", b.etCaption.text.toString()).putString("draft_path", thumbPath).putBoolean("draft_is_video", isVideo).putInt("draft_file_id", fileId).apply() } catch (e: Exception) {}
-    }
-    private fun restoreDraft(): Boolean {
-        val prefs = getSharedPreferences("draft_prefs", MODE_PRIVATE); val path = prefs.getString("draft_path", null)
-        if (path != null || prefs.getString("draft_caption", "")!!.isNotEmpty()) {
-            thumbPath = path; isVideo = prefs.getBoolean("draft_is_video", false); fileId = prefs.getInt("draft_file_id", 0)
-            b.etCaption.setText(prefs.getString("draft_caption", "")); if (path != null) loadSharpImage(path); return true
-        }
-        return false
-    }
+    private fun saveDraft() { try { getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().putString("draft_caption", b.etCaption.text.toString()).putString("draft_path", thumbPath).putBoolean("draft_is_video", isVideo).putInt("draft_file_id", fileId).apply() } catch (e: Exception) {} }
+    private fun restoreDraft(): Boolean { val prefs = getSharedPreferences("draft_prefs", MODE_PRIVATE); val path = prefs.getString("draft_path", null); if (path != null || prefs.getString("draft_caption", "")!!.isNotEmpty()) { thumbPath = path; isVideo = prefs.getBoolean("draft_is_video", false); fileId = prefs.getInt("draft_file_id", 0); b.etCaption.setText(prefs.getString("draft_caption", "")); if (path != null) loadSharpImage(path); return true }; return false }
     private fun clearDraft() { getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().clear().apply() }
     private fun safeToast(msg: String) { runOnUiThread { Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() } }
     
-    private fun startHDImageHunter(targetId: Int) {
-        TdLibManager.downloadFile(targetId)
-        lifecycleScope.launch(Dispatchers.IO) {
-            for (i in 0..20) {
-                val realPath = TdLibManager.getFilePath(targetId)
-                if (realPath != null && File(realPath).exists() && File(realPath).length() > 1000) { withContext(Dispatchers.Main) { thumbPath = realPath; loadSharpImage(realPath); saveDraft() }; break }
-                delay(500)
-            }
-        }
-    }
+    private fun startHDImageHunter(targetId: Int) { TdLibManager.downloadFile(targetId); lifecycleScope.launch(Dispatchers.IO) { for (i in 0..20) { val realPath = TdLibManager.getFilePath(targetId); if (realPath != null && File(realPath).exists() && File(realPath).length() > 1000) { withContext(Dispatchers.Main) { thumbPath = realPath; loadSharpImage(realPath); saveDraft() }; break }; delay(500) } } }
     private fun loadSharpImage(path: String) { b.ivPreview.load(File(path)) { memoryCachePolicy(CachePolicy.DISABLED); diskCachePolicy(CachePolicy.DISABLED); crossfade(true); listener(onSuccess = { _, _ -> b.ivPreview.post { calculateMatrixBounds() } }) } }
 
-    // --- שליחה ---
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f; calculateMatrixBounds() }
         b.btnModeLogo.setOnClickListener { b.drawingView.isBlurMode = false; b.ivDraggableLogo.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f; b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.post { calculateMatrixBounds(); restoreLogoPosition() } }
-        b.ivDraggableLogo.setOnTouchListener { view, event -> 
-            if (b.drawingView.isBlurMode) return@setOnTouchListener false
-            when (event.action) { 
-                android.view.MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }
-                android.view.MotionEvent.ACTION_MOVE -> { 
-                    var newX = event.rawX + dX; var newY = event.rawY + dY
-                    if (imageBounds.width() > 0) { 
-                        if(newX < imageBounds.left) newX = imageBounds.left; if(newX + view.width > imageBounds.right) newX = imageBounds.right - view.width
-                        if(newY < imageBounds.top) newY = imageBounds.top; if(newY + view.height > imageBounds.bottom) newY = imageBounds.bottom - view.height
-                        savedLogoRelX = (newX - imageBounds.left) / imageBounds.width()
-                        savedLogoRelY = (newY - imageBounds.top) / imageBounds.height()
-                    }
-                    view.x = newX; view.y = newY
-                } 
-            }
-            true 
-        }
+        b.ivDraggableLogo.setOnTouchListener { view, event -> if (b.drawingView.isBlurMode) return@setOnTouchListener false; when (event.action) { android.view.MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }; android.view.MotionEvent.ACTION_MOVE -> { var newX = event.rawX + dX; var newY = event.rawY + dY; if (imageBounds.width() > 0) { if(newX < imageBounds.left) newX = imageBounds.left; if(newX + view.width > imageBounds.right) newX = imageBounds.right - view.width; if(newY < imageBounds.top) newY = imageBounds.top; if(newY + view.height > imageBounds.bottom) newY = imageBounds.bottom - view.height; savedLogoRelX = (newX - imageBounds.left) / imageBounds.width(); savedLogoRelY = (newY - imageBounds.top) / imageBounds.height() }; view.x = newX; view.y = newY } }; true }
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener { override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { savedLogoScale = 0.5f + (p / 50f); b.ivDraggableLogo.scaleX = savedLogoScale; b.ivDraggableLogo.scaleY = savedLogoScale }; override fun onStartTrackingTouch(sb: SeekBar?) {}; override fun onStopTrackingTouch(sb: SeekBar?) {} })
         b.btnTranslate.setOnClickListener { lifecycleScope.launch { val t = b.etCaption.text.toString(); if (t.isNotEmpty()) { b.etCaption.setText(TranslationManager.translateToHebrew(t)); saveDraft() } } }
-        
-        // כפתור השליחה
         b.btnSend.setOnClickListener { performSafeSend() }
         b.btnCancel.setOnClickListener { finish() }
     }
     
-    // חישובים
-    private var dX = 0f; private var dY = 0f
-    private fun calculateMatrixBounds() {
-        val d = b.ivPreview.drawable ?: return
-        val m = b.ivPreview.imageMatrix; val v = FloatArray(9); m.getValues(v)
-        val sX = v[Matrix.MSCALE_X]; val sY = v[Matrix.MSCALE_Y]
-        val w = d.intrinsicWidth * sX; val h = d.intrinsicHeight * sY
-        imageBounds.set(v[Matrix.MTRANS_X], v[Matrix.MTRANS_Y], v[Matrix.MTRANS_X] + w, v[Matrix.MTRANS_Y] + h)
-        b.drawingView.setValidBounds(imageBounds)
-    }
+    private fun calculateMatrixBounds() { val d = b.ivPreview.drawable ?: return; val m = b.ivPreview.imageMatrix; val v = FloatArray(9); m.getValues(v); val w = d.intrinsicWidth * v[Matrix.MSCALE_X]; val h = d.intrinsicHeight * v[Matrix.MSCALE_Y]; imageBounds.set(v[Matrix.MTRANS_X], v[Matrix.MTRANS_Y], v[Matrix.MTRANS_X] + w, v[Matrix.MTRANS_Y] + h); b.drawingView.setValidBounds(imageBounds) }
     private fun restoreLogoPosition() { if (imageBounds.width() > 0) { b.ivDraggableLogo.x = imageBounds.left + (savedLogoRelX * imageBounds.width()); b.ivDraggableLogo.y = imageBounds.top + (savedLogoRelY * imageBounds.height()) } }
     private fun setupMediaToggle() { b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked -> b.vDisabledOverlay.visibility = if (isChecked) android.view.View.GONE else android.view.View.VISIBLE; b.mediaToolsContainer.alpha = if (isChecked) 1.0f else 0.3f; b.btnModeBlur.isEnabled = isChecked; b.btnModeLogo.isEnabled = isChecked } }
 
@@ -166,12 +121,12 @@ class DetailsActivity : AppCompatActivity() {
         GlobalScope.launch(Dispatchers.IO) {
             try {
                 if (!includeMedia) {
+                    safeToast("Sending Text...")
                     TdLibManager.sendFinalMessage(target, caption, null, false)
                     clearDraft(); runOnUiThread { finish() }
                     return@launch
                 }
 
-                // בדיקת קובץ
                 var finalPath = currentPath
                 if (finalPath == null || !File(finalPath).exists()) {
                     if (fileId != 0) { TdLibManager.downloadFile(fileId); Thread.sleep(2000); finalPath = TdLibManager.getFilePath(fileId) }
@@ -182,13 +137,12 @@ class DetailsActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                // הכנת נתונים לעיבוד
+                safeToast("Processing...")
                 val rects = ArrayList<BlurRect>()
                 for (r in b.drawingView.rects) rects.add(BlurRect(r.left, r.top, r.right, r.bottom))
                 
                 var logoUri: Uri? = null
                 if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE) {
-                     // שמירת הלוגו כקובץ זמני בטוח
                      val d = b.ivDraggableLogo.drawable
                      if (d is BitmapDrawable) {
                          val f = File(cacheDir, "temp_logo.png"); val o = FileOutputStream(f)
@@ -199,33 +153,27 @@ class DetailsActivity : AppCompatActivity() {
                 val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
                 val relW = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
 
-                safeToast("Processing...")
-
-                // --- רגע האמת: בחירת מנוע ---
+                // כאן אנחנו קוראים למעבד המתוקן (שעכשיו גם מקטין את הוידאו אם צריך)
                 val success = if (isVideo) {
-                    // וידאו הולך ל-MediaProcessor (FFmpeg)
                     var vidResult = false
                     val lock = Object()
                     MediaProcessor.processContent(applicationContext, finalPath, outPath, true, rects, logoUri, savedLogoRelX, savedLogoRelY, relW) { 
                         vidResult = it; synchronized(lock) { lock.notify() } 
                     }
-                    synchronized(lock) { lock.wait(60000) } // מחכים עד דקה לוידאו
+                    synchronized(lock) { lock.wait(120000) } // נותנים לו עד 2 דקות
                     vidResult
                 } else {
-                    // תמונה הולכת ל-ImageUtils (Native - בטוח!)
                     ImageUtils.processImage(applicationContext, finalPath, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
                 }
 
                 if (success) {
+                    safeToast("Sending...")
                     TdLibManager.sendFinalMessage(target, caption, outPath, isVideo)
-                    clearDraft()
-                    runOnUiThread { finish() }
+                    clearDraft(); runOnUiThread { finish() }
                 } else {
-                    // Fallback: שליחת המקור
                     safeToast("Edit failed, sending original...")
                     TdLibManager.sendFinalMessage(target, caption, finalPath, isVideo)
-                    clearDraft()
-                    runOnUiThread { finish() }
+                    clearDraft(); runOnUiThread { finish() }
                 }
 
             } catch (e: Exception) {
