@@ -56,11 +56,11 @@ dependencies {
     // --- DataStore ---
     implementation "androidx.datastore:datastore-preferences:1.0.0"
 
-    // --- TDLib (החלפה למאגר ציבורי) ---
-    // zellius היה פרטי (401), זה מאגר ציבורי שעובד:
-    implementation 'com.github.ieee0824:tdlib:v1.8.16'
-
-    // --- FFmpeg (מקומי) ---
+    // --- ספריות מקומיות (הפתרון הבטוח) ---
+    // 1. TDLib (Telegram)
+    implementation files('libs/tdlib.aar')
+    
+    // 2. FFmpeg (Video Editing)
     implementation files('libs/ffmpeg-kit-full-gpl-6.0.aar')
     
     // --- Testing ---
