@@ -12,6 +12,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.pasiflonet.mobile.databinding.ActivityMainBinding
 import com.pasiflonet.mobile.td.TdLibManager
+import com.pasiflonet.mobile.utils.KeepAliveService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
@@ -26,6 +27,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
+        
+        // התנעת השירות ברקע
+        startService(Intent(this, KeepAliveService::class.java))
+        
         b.apiContainer.visibility = View.GONE; b.loginContainer.visibility = View.GONE; b.mainContent.visibility = View.GONE
         setupUI(); checkPermissions(); checkApiAndInit()
     }
@@ -94,14 +99,9 @@ class MainActivity : AppCompatActivity() {
         b.rvMessages.adapter = adapter
         b.btnClearCache.setOnClickListener { cacheDir.deleteRecursively(); Toast.makeText(this,"Cache Cleared",Toast.LENGTH_SHORT).show() }
         
-        // --- הכפתור הבטוח: מונע קריסה ---
         b.btnSettings.setOnClickListener { 
-            try {
-                startActivity(Intent(this, SettingsActivity::class.java)) 
-            } catch (e: Exception) {
-                Toast.makeText(this, "Cannot open Settings: ${e.message}", Toast.LENGTH_LONG).show()
-                e.printStackTrace()
-            }
+            try { startActivity(Intent(this, SettingsActivity::class.java)) } 
+            catch (e: Exception) { Toast.makeText(this, "Settings Error", Toast.LENGTH_SHORT).show() }
         }
     }
     
@@ -112,6 +112,37 @@ class MainActivity : AppCompatActivity() {
         if(i!=0 && !h.isNullOrEmpty()){ b.apiContainer.visibility=View.GONE; TdLibManager.init(this@MainActivity,i,h); observeAuth() } else { b.apiContainer.visibility=View.VISIBLE; b.mainContent.visibility=View.GONE } 
     }
     
-    private fun observeAuth() { lifecycleScope.launch { TdLibManager.authState.collect { s -> runOnUiThread { if(s is TdApi.AuthorizationStateWaitPhoneNumber){ b.apiContainer.visibility=View.GONE; b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.GONE; b.btnSendCode.isEnabled=true; b.btnSendCode.text="SEND CODE" } else if(s is TdApi.AuthorizationStateWaitCode){ b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.GONE; b.codeLayout.visibility=View.VISIBLE } else if(s is TdApi.AuthorizationStateWaitPassword){ b.loginContainer.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.VISIBLE } else if(s is TdApi.AuthorizationStateReady){ b.loginContainer.visibility=View.GONE; b.mainContent.visibility=View.VISIBLE } } } }; lifecycleScope.launch { TdLibManager.currentMessages.collect { m -> runOnUiThread { adapter.updateList(m) } } } }
-    private fun checkPermissions() { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)) else requestPermissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE)) }
+    private fun observeAuth() { 
+        lifecycleScope.launch { 
+            TdLibManager.authState.collect { s -> 
+                runOnUiThread { 
+                    if(s is TdApi.AuthorizationStateWaitPhoneNumber){ b.apiContainer.visibility=View.GONE; b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.GONE; b.btnSendCode.isEnabled=true; b.btnSendCode.text="SEND CODE" } 
+                    else if(s is TdApi.AuthorizationStateWaitCode){ b.loginContainer.visibility=View.VISIBLE; b.phoneLayout.visibility=View.GONE; b.codeLayout.visibility=View.VISIBLE } 
+                    else if(s is TdApi.AuthorizationStateWaitPassword){ b.loginContainer.visibility=View.VISIBLE; b.codeLayout.visibility=View.GONE; b.passwordLayout.visibility=View.VISIBLE } 
+                    else if(s is TdApi.AuthorizationStateReady){ b.loginContainer.visibility=View.GONE; b.mainContent.visibility=View.VISIBLE } 
+                } 
+            } 
+        }
+        
+        // תיקון תקיעות: איסוף הודעות ברקע ועדכון UI רק כשיש משהו חדש
+        lifecycleScope.launch { 
+            TdLibManager.currentMessages.collect { m -> 
+                runOnUiThread { adapter.updateList(m) } 
+            } 
+        } 
+    }
+    
+    private fun checkPermissions() { 
+        val perms = mutableListOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            perms.clear()
+            perms.add(Manifest.permission.READ_MEDIA_IMAGES)
+            perms.add(Manifest.permission.READ_MEDIA_VIDEO)
+            perms.add(Manifest.permission.POST_NOTIFICATIONS) // חובה בשביל השירות
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            perms.add(Manifest.permission.FOREGROUND_SERVICE)
+        }
+        requestPermissionLauncher.launch(perms.toTypedArray()) 
+    }
 }
