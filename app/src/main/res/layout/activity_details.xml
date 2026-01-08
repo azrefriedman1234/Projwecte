@@ -260,5 +260,4 @@
             android:layout_gravity="center"
             android:layout_marginTop="50dp"/>
     </FrameLayout>
-
 </androidx.constraintlayout.widget.ConstraintLayout>

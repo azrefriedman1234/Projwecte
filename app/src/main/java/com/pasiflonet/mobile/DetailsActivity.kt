@@ -147,7 +147,6 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun sendDataSafe() {
         try { 
-            // הפעלת מסך הטעינה ונטרול כפתורים
             b.loadingOverlay.visibility = android.view.View.VISIBLE
             b.btnSend.isEnabled = false
             b.btnCancel.isEnabled = false
@@ -155,7 +154,6 @@ class DetailsActivity : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e("SEND_CRASH", "Error sending data", e)
             safeToast("Critical Error: ${e.message}")
-            // החזרת המצב לקדמותו במקרה של שגיאה
             b.loadingOverlay.visibility = android.view.View.GONE
             b.btnSend.isEnabled = true
             b.btnCancel.isEnabled = true
@@ -204,8 +202,6 @@ class DetailsActivity : AppCompatActivity() {
         val relativeWidthSnapshot = relW
         val logoRelXSnapshot = cleanFloat(savedLogoRelX); val logoRelYSnapshot = cleanFloat(savedLogoRelY)
 
-        // הערה: מחקנו את finish() מכאן! האפליקציה תישאר פתוחה עם גלגל טעינה
-
         GlobalScope.launch(Dispatchers.IO) {
             var wakeLock: PowerManager.WakeLock? = null
             try {
@@ -218,7 +214,7 @@ class DetailsActivity : AppCompatActivity() {
                 if (!includeMedia) { 
                     safeToast("Sending Text Only...")
                     TdLibManager.sendFinalMessage(target, caption, null, false)
-                    runOnUiThread { finish() } // סגירה רק בסיום
+                    runOnUiThread { finish() }
                     return@launch 
                 }
                 
@@ -255,7 +251,6 @@ class DetailsActivity : AppCompatActivity() {
                             GlobalScope.launch(Dispatchers.IO) {
                                 try { 
                                     TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
-                                    // סגירה סופית רק אחרי שהכל הצליח
                                     runOnUiThread { finish() }
                                 }
                                 catch(e: Exception) { 
