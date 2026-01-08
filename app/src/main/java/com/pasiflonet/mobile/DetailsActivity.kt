@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
 import android.view.MotionEvent
@@ -58,9 +59,7 @@ class DetailsActivity : AppCompatActivity() {
 
             val targetId = if (thumbId != 0) thumbId else fileId
             if (targetId != 0) {
-                // רק מתחילים את ההורדה, לא מחכים לה
                 TdLibManager.downloadFile(targetId)
-                // בדיקה מהירה אם כבר יש קובץ
                 lifecycleScope.launch(Dispatchers.IO) {
                     val realPath = TdLibManager.getFilePath(targetId)
                     if (realPath != null && File(realPath).exists() && File(realPath).length() > 0) {
@@ -74,7 +73,6 @@ class DetailsActivity : AppCompatActivity() {
                 loadSharpImage(thumbPath!!)
             }
             
-            // ביטול מדיה אם אין תוכן
             if (targetId == 0 && thumbPath.isNullOrEmpty()) {
                 b.swIncludeMedia.isChecked = false; b.swIncludeMedia.isEnabled = false
             }
@@ -166,58 +164,62 @@ class DetailsActivity : AppCompatActivity() {
         b.btnCancel.setOnClickListener { finish() }
     }
 
+    // פונקציה חזקה להמרת Drawable ל-Bitmap
+    private fun getBitmapFromDrawable(drawable: Drawable): Bitmap {
+        if (drawable is BitmapDrawable) return drawable.bitmap
+        val bitmap = Bitmap.createBitmap(drawable.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+        return bitmap
+    }
+
     private fun sendData() {
         val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         val target = prefs.getString("target_username", "") ?: ""
         if (target.isEmpty()) { Toast.makeText(this, "Set Target!", Toast.LENGTH_SHORT).show(); return }
         
-        // 1. איסוף כל הנתונים מה-UI לפני שהמסך נסגר
         val caption = b.etCaption.text.toString()
         val includeMedia = b.swIncludeMedia.isChecked
         val targetId = if (thumbId != 0) thumbId else fileId
-        val currentThumbPath = thumbPath // שמירת נתיב קיים למקרה שיש
+        val currentThumbPath = thumbPath
         
         updateImageBounds()
         val relativeWidth = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
-        val rects = b.drawingView.rects.toList() // העתקת הרשימה
+        val rects = b.drawingView.rects.toList()
         
         var logoUriStr = prefs.getString("logo_uri", null)
         var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
 
-        // 2. לכידת לוגו מהירה (חוסם UI לרגע קצרצר) אם צריך
+        // --- לכידת לוגו משופרת ---
         if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE && logoUri == null) {
             try {
-                b.ivDraggableLogo.isDrawingCacheEnabled = true
-                val bitmap = Bitmap.createBitmap(b.ivDraggableLogo.drawingCache)
-                b.ivDraggableLogo.isDrawingCacheEnabled = false
-                val file = File(cacheDir, "captured_logo_${System.currentTimeMillis()}.png")
-                val out = FileOutputStream(file)
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                out.flush(); out.close()
-                logoUri = Uri.fromFile(file)
+                // שימוש בשיטה אמינה של Canvas במקום DrawingCache
+                val drawable = b.ivDraggableLogo.drawable
+                if (drawable != null) {
+                    val bitmap = getBitmapFromDrawable(drawable)
+                    val file = File(cacheDir, "captured_logo_${System.currentTimeMillis()}.png")
+                    val out = FileOutputStream(file)
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    out.flush(); out.close()
+                    logoUri = Uri.fromFile(file)
+                }
             } catch (e: Exception) { e.printStackTrace() }
         }
 
-        // 3. יציאה מיידית!
         Toast.makeText(this, "Processing in background...", Toast.LENGTH_SHORT).show()
         finish() 
 
-        // 4. תהליך הרקע (Ghost Process)
         GlobalScope.launch(Dispatchers.IO) {
             if (!includeMedia) {
                 TdLibManager.sendFinalMessage(target, caption, null, false)
                 return@launch
             }
 
-            // לוגיקת המתנה להורדה - עכשיו רצה ברקע!
             var finalPath = currentThumbPath
-            
-            // אם אין נתיב, או שהקובץ לא קיים, מחכים לו
             if (finalPath == null || !File(finalPath).exists()) {
                 if (targetId != 0) {
-                     TdLibManager.downloadFile(targetId) // דחיפה להורדה
-                     
-                     // המתנה של עד 60 שניות (מספיק זמן לוידאו גדול)
+                     TdLibManager.downloadFile(targetId)
                      for (i in 1..60) {
                          val realPath = TdLibManager.getFilePath(targetId)
                          if (realPath != null && File(realPath).exists() && File(realPath).length() > 0) {
@@ -229,15 +231,11 @@ class DetailsActivity : AppCompatActivity() {
                 }
             }
 
-            // אם אחרי ההמתנה עדיין אין קובץ - מוותרים
-            if (finalPath == null || !File(finalPath).exists()) {
-                return@launch 
-            }
+            if (finalPath == null || !File(finalPath).exists()) return@launch 
 
-            val extension = if(isVideo) "mp4" else "png"
+            val extension = if(isVideo) "mp4" else "png" // PNG לתמונות!
             val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
-            // שימוש בקונטקסט האפליקציה (כי ה-Activity מת)
             MediaProcessor.processContent(
                 context = applicationContext, 
                 inputPath = finalPath,

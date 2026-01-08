@@ -58,9 +58,8 @@ object MediaProcessor {
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
         catch (e: Exception) { showToast(context, "Copy Failed"); onComplete(false); return }
 
-        // --- שינוי קריטי: לא מדלגים לעולם אם הפונקציה נקראה! ---
-        // אם הגענו לפה, סימן שהמשתמש ביקש עריכה.
-        // גם אם הרשימות ריקות, נעביר דרך FFmpeg כדי "לנקות" את הקובץ.
+        // --- השינוי הקריטי: מחקנו את הבלוק שבודק אם rects ריק ---
+        // מעכשיו אנחנו ממשיכים ל-FFmpeg בכל מצב!
 
         var logoPath: String? = null
         if (logoUri != null) {
@@ -89,7 +88,7 @@ object MediaProcessor {
         var currentStream = "[0:v]"
         var filterChanged = false
         
-        // --- שלב הטשטוש ---
+        // טשטוש
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
@@ -105,13 +104,9 @@ object MediaProcessor {
             if (pixelW < 4) pixelW = 4
             if (pixelH < 4) pixelH = 4
 
-            val wStr = pixelW.toString()
-            val hStr = pixelH.toString()
-            val xStr = pixelX.toString()
-            val yStr = pixelY.toString()
+            val wStr = pixelW.toString(); val hStr = pixelH.toString(); val xStr = pixelX.toString(); val yStr = pixelY.toString()
             
             if (filter.isNotEmpty()) filter.append(";")
-            
             filter.append("$currentStream split=2[$splitName][$cropName];")
             filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/5/2)*2:-2:flags=lanczos,scale=$wStr:$hStr:flags=lanczos[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream")
@@ -119,7 +114,7 @@ object MediaProcessor {
             filterChanged = true
         }
 
-        // --- שלב הלוגו ---
+        // לוגו
         if (logoPath != null) {
             var targetLogoW = (width * lRelWidth).toInt()
             if (targetLogoW % 2 != 0) targetLogoW--
@@ -129,48 +124,40 @@ object MediaProcessor {
             val finalY = (height * lY).toInt()
 
             if (filter.isNotEmpty()) filter.append(";")
-            
             filter.append("[1:v]scale=$targetLogoW:-1:flags=lanczos[logo];")
             filter.append("$currentStream[logo]overlay=x=$finalX:y=$finalY[v_pre_final]")
             currentStream = "[v_pre_final]"
             filterChanged = true
         }
 
-        // --- סיום שרשרת ---
-        if (filterChanged) {
-            if (filter.isNotEmpty()) filter.append(";")
-            // הגנה לוידאו
-            if (isVideo) {
-                 filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
-            } else {
-                 // אין חידוד לתמונות PNG - הן מושלמות כמו שהן
-                 filter.append("${currentStream}null[v_done]")
-            }
-            
-            args.add("-filter_complex"); args.add(filter.toString())
-            args.add("-map"); args.add("[v_done]")
-        } else {
-            // אם לא היו פילטרים בכלל (רק העתקה), עדיין נריץ דרך המקודד
-            // זה יבטיח שהקובץ יעובד
-        }
-
+        // סיום שרשרת (חובה להריץ את זה תמיד לוידאו!)
+        if (filter.isNotEmpty()) filter.append(";")
         
         if (isVideo) {
-            // הגנת אודיו
-            args.add("-map"); args.add("0:a?")
-            
-            // מקודד MPEG4 - הכי בטוח
+             // כאן הקסם: הפקודה הזו תרוץ גם אם לא היה לוגו או טשטוש
+             // היא תבטיח שהוידאו מקודד מחדש ותקין
+             filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
+        } else {
+             // לתמונות שלא נערכו - פשוט מעבירים הלאה (אבל עדיין שומרים כ-PNG)
+             if (!filterChanged) {
+                 filter.append("${currentStream}null[v_done]")
+             } else {
+                 filter.append("${currentStream}null[v_done]")
+             }
+        }
+        
+        args.add("-filter_complex"); args.add(filter.toString())
+        args.add("-map"); args.add("[v_done]")
+        
+        if (isVideo) {
+            args.add("-map"); args.add("0:a?") // הגנת אודיו
             args.add("-c:v"); args.add("mpeg4")
             args.add("-q:v"); args.add("2")
             args.add("-pix_fmt"); args.add("yuv420p")
-            
-            // המרת אודיו
             args.add("-c:a"); args.add("aac")
             args.add("-b:a"); args.add("128k")
             args.add("-ac"); args.add("2")
         } else {
-            // --- התיקון לאיכות תמונה ---
-            // מעבר ל-PNG! שום דחיסה, שום איבוד איכות.
             args.add("-c:v"); args.add("png")
         }
         args.add(finalOutputPath)
@@ -181,8 +168,8 @@ object MediaProcessor {
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
-                val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
-                showToast(context, "❌ Error: $errorMsg")
+                val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
+                showToast(context, "❌ Processing Error: $errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
