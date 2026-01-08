@@ -1,5 +1,6 @@
 package com.pasiflonet.mobile
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -8,7 +9,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
-import android.view.MotionEvent
+import android.os.PowerManager
 import android.view.ViewTreeObserver
 import android.widget.SeekBar
 import android.widget.Toast
@@ -21,6 +22,7 @@ import com.pasiflonet.mobile.td.TdLibManager
 import com.pasiflonet.mobile.utils.MediaProcessor
 import com.pasiflonet.mobile.utils.TranslationManager
 import com.pasiflonet.mobile.utils.ViewUtils
+import com.pasiflonet.mobile.utils.BlurRect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
@@ -70,7 +72,12 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun updateImageBounds() {
         imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
-        if (imageBounds.width() <= 0 && b.ivPreview.width > 0) { imageBounds.set(0f, 0f, b.ivPreview.width.toFloat(), b.ivPreview.height.toFloat()) }
+        // הגנה מפני קריסת מתמטיקה: אם הרוחב 0, נשתמש בברירת מחדל בטוחה
+        if (imageBounds.width() <= 0) { 
+            val fallbackW = if (b.ivPreview.width > 0) b.ivPreview.width.toFloat() else 1080f
+            val fallbackH = if (b.ivPreview.height > 0) b.ivPreview.height.toFloat() else 1920f
+            imageBounds.set(0f, 0f, fallbackW, fallbackH) 
+        }
         b.drawingView.setValidBounds(imageBounds)
     }
     
@@ -95,36 +102,71 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun getBitmapFromDrawable(drawable: Drawable): Bitmap { if (drawable is BitmapDrawable) return drawable.bitmap; val bitmap = Bitmap.createBitmap(drawable.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888); val canvas = Canvas(bitmap); drawable.setBounds(0, 0, canvas.width, canvas.height); drawable.draw(canvas); return bitmap }
 
+    // פונקציה לחיטוי מספרים (החלפת NaN ו-Infinity)
+    private fun safeFloat(v: Float, default: Float): Float {
+        if (v.isNaN() || v.isInfinite()) return default
+        return v
+    }
+
     private fun sendData() {
         val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         val target = prefs.getString("target_username", "") ?: ""
         if (target.isEmpty()) { Toast.makeText(this, "Set Target!", Toast.LENGTH_SHORT).show(); return }
         val caption = b.etCaption.text.toString(); val includeMedia = b.swIncludeMedia.isChecked; val targetId = if (thumbId != 0) thumbId else fileId; val currentThumbPath = thumbPath
-        updateImageBounds()
-        val rectsSnapshot = ArrayList(b.drawingView.rects); val relativeWidthSnapshot = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
-        val logoRelXSnapshot = savedLogoRelX; val logoRelYSnapshot = savedLogoRelY
-        var logoUriStr = prefs.getString("logo_uri", null); var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
+        
+        updateImageBounds() // וידוא גבולות
 
+        // --- חיטוי ואיסוף נתונים (Sanitization) ---
+        val rawRects = b.drawingView.rects
+        val safeRects = ArrayList<BlurRect>()
+        for (r in rawRects) {
+            // אם המספרים משובשים, נתקן אותם לערכים הגיוניים
+            safeRects.add(BlurRect(
+                safeFloat(r.left, 0.4f),
+                safeFloat(r.top, 0.4f),
+                safeFloat(r.right, 0.6f),
+                safeFloat(r.bottom, 0.6f)
+            ))
+        }
+
+        val logoW = b.ivDraggableLogo.width * savedLogoScale
+        val boundsW = if (imageBounds.width() > 0) imageBounds.width() else 1080f
+        val relativeWidthSnapshot = safeFloat(logoW / boundsW, 0.2f) // ברירת מחדל 20%
+        
+        val logoRelXSnapshot = safeFloat(savedLogoRelX, 0.5f)
+        val logoRelYSnapshot = safeFloat(savedLogoRelY, 0.5f)
+        
+        var logoUriStr = prefs.getString("logo_uri", null); var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
         if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE && logoUri == null) {
             try { val drawable = b.ivDraggableLogo.drawable; if (drawable != null) { val bitmap = getBitmapFromDrawable(drawable); val file = File(cacheDir, "captured_logo_final.png"); val out = FileOutputStream(file); bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); out.flush(); out.close(); logoUri = Uri.fromFile(file) } } catch (e: Exception) { e.printStackTrace() }
         }
 
-        Toast.makeText(this, "Starting Background Process...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Validating & Sending...", Toast.LENGTH_SHORT).show()
         finish() 
 
         GlobalScope.launch(Dispatchers.IO) {
-            if (!includeMedia) { TdLibManager.sendFinalMessage(target, caption, null, false); return@launch }
-            var finalPath = currentThumbPath
-            if (finalPath == null || !File(finalPath).exists()) {
-                if (targetId != 0) { TdLibManager.downloadFile(targetId); for (i in 1..60) { val realPath = TdLibManager.getFilePath(targetId); if (realPath != null && File(realPath).exists() && File(realPath).length() > 0) { finalPath = realPath; break }; delay(1000) } }
-            }
-            if (finalPath == null || !File(finalPath).exists()) return@launch 
+            // נעילת מעבד - שלא ילך לישון באמצע
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            val wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Pasiflonet:EncodeLock")
+            wakeLock.acquire(10*60*1000L /* 10 mins */)
 
-            val extension = if(isVideo) "mp4" else "png"
-            val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
+            try {
+                if (!includeMedia) { TdLibManager.sendFinalMessage(target, caption, null, false); return@launch }
+                
+                var finalPath = currentThumbPath
+                if (finalPath == null || !File(finalPath).exists()) {
+                    if (targetId != 0) { TdLibManager.downloadFile(targetId); for (i in 1..60) { val realPath = TdLibManager.getFilePath(targetId); if (realPath != null && File(realPath).exists() && File(realPath).length() > 0) { finalPath = realPath; break }; delay(1000) } }
+                }
+                if (finalPath == null || !File(finalPath).exists()) return@launch 
 
-            MediaProcessor.processContent(applicationContext, finalPath, outputPath, isVideo, rectsSnapshot, logoUri, logoRelXSnapshot, logoRelYSnapshot, relativeWidthSnapshot) { success ->
-                if (success) TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
+                val extension = if(isVideo) "mp4" else "png"
+                val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
+
+                MediaProcessor.processContent(applicationContext, finalPath, outputPath, isVideo, safeRects, logoUri, logoRelXSnapshot, logoRelYSnapshot, relativeWidthSnapshot) { success ->
+                    if (success) TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
+                }
+            } finally {
+                if (wakeLock.isHeld) wakeLock.release()
             }
         }
     }
