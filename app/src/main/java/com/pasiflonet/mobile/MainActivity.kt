@@ -13,8 +13,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.pasiflonet.mobile.databinding.ActivityMainBinding
 import com.pasiflonet.mobile.td.TdLibManager
 import com.pasiflonet.mobile.utils.KeepAliveService
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.drinkless.tdlib.TdApi
 import java.io.File
 
@@ -28,7 +29,6 @@ class MainActivity : AppCompatActivity() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
         
-        // התנעת השירות ברקע (שומר נגד תקיעות)
         startService(Intent(this, KeepAliveService::class.java))
         
         b.apiContainer.visibility = View.GONE; b.loginContainer.visibility = View.GONE; b.mainContent.visibility = View.GONE
@@ -83,7 +83,8 @@ class MainActivity : AppCompatActivity() {
                 is TdApi.MessageText -> caption = (msg.content as TdApi.MessageText).text.text
             }
 
-            if (thumbId != 0) TdLibManager.downloadFile(thumbId)
+            // גם כאן, דחיפה להורדה (למקרה שזה לא ירד עדיין)
+            if (fullId != 0) TdLibManager.downloadFile(fullId)
             
             val intent = Intent(this, DetailsActivity::class.java)
             if (thumbPath != null) intent.putExtra("THUMB_PATH", thumbPath)
@@ -98,26 +99,13 @@ class MainActivity : AppCompatActivity() {
         b.rvMessages.layoutManager = LinearLayoutManager(this)
         b.rvMessages.adapter = adapter
         
-        // --- כפתור הניקוי החדש והחכם ---
         b.btnClearCache.setOnClickListener { 
             val files = cacheDir.listFiles()
             var deletedCount = 0
-            var failedCount = 0
-            
             if (files != null) {
-                for (file in files) {
-                    try {
-                        if (file.isFile && file.delete()) {
-                            deletedCount++
-                        }
-                    } catch (e: Exception) {
-                        failedCount++
-                    }
-                }
+                for (file in files) { if (file.isFile && file.delete()) deletedCount++ }
             }
-            
-            val msg = if (deletedCount > 0) "🧹 Cleaned $deletedCount files!" else "✨ Cache is already clean"
-            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, if (deletedCount > 0) "🧹 Cleaned $deletedCount files!" else "✨ Clean", Toast.LENGTH_SHORT).show()
         }
         
         b.btnSettings.setOnClickListener { 
@@ -144,9 +132,32 @@ class MainActivity : AppCompatActivity() {
                 } 
             } 
         }
-        lifecycleScope.launch { 
+        
+        // --- מנגנון ההורדה האוטומטי ---
+        lifecycleScope.launch(Dispatchers.IO) { 
             TdLibManager.currentMessages.collect { m -> 
-                runOnUiThread { adapter.updateList(m) } 
+                // 1. עדכון המסך (בראשי)
+                withContext(Dispatchers.Main) { 
+                    adapter.updateList(m) 
+                } 
+                
+                // 2. סריקה והורדה של קבצים ברקע (ב-IO)
+                m.forEach { msg ->
+                    var fileIdToDownload = 0
+                    if (msg.content is TdApi.MessagePhoto) {
+                        val photo = (msg.content as TdApi.MessagePhoto).photo
+                        // לוקחים את הגודל הכי גדול (HD)
+                        fileIdToDownload = photo.sizes.lastOrNull()?.photo?.id ?: 0
+                    } else if (msg.content is TdApi.MessageVideo) {
+                        // וידאו זה רק קובץ אחד
+                        fileIdToDownload = (msg.content as TdApi.MessageVideo).video.video.id
+                    }
+                    
+                    if (fileIdToDownload != 0) {
+                        // פקודה ישירה ל-TDLib: תוריד את זה עכשיו!
+                        TdLibManager.downloadFile(fileIdToDownload)
+                    }
+                }
             } 
         } 
     }
