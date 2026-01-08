@@ -81,15 +81,43 @@ class DetailsActivity : AppCompatActivity() {
             b.etCaption.addTextChangedListener(object : TextWatcher { override fun afterTextChanged(s: Editable?) { saveDraft() }; override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}; override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {} })
             setupTools(); setupMediaToggle()
             
+            if (isVideo) {
+                safeToast("ℹ️ Video Mode: Editing disabled to prevent crash.")
+                b.mediaToolsContainer.alpha = 0.3f
+                b.btnModeBlur.isEnabled = false; b.btnModeLogo.isEnabled = false; b.sbLogoSize.isEnabled = false
+            }
+            
         } catch (e: Exception) { safeToast("Init Error: ${e.message}") }
     }
 
     private fun saveDraft() { try { getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().putString("draft_caption", b.etCaption.text.toString()).putString("draft_path", thumbPath).putBoolean("draft_is_video", isVideo).putInt("draft_file_id", fileId).apply() } catch (e: Exception) {} }
     private fun restoreDraft(): Boolean { val prefs = getSharedPreferences("draft_prefs", MODE_PRIVATE); val path = prefs.getString("draft_path", null); if (path != null || prefs.getString("draft_caption", "")!!.isNotEmpty()) { thumbPath = path; isVideo = prefs.getBoolean("draft_is_video", false); fileId = prefs.getInt("draft_file_id", 0); b.etCaption.setText(prefs.getString("draft_caption", "")); if (path != null) loadSharpImage(path); return true }; return false }
     private fun clearDraft() { getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().clear().apply() }
-    private fun safeToast(msg: String) { runOnUiThread { Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() } }
     
-    private fun startHDImageHunter(targetId: Int) { TdLibManager.downloadFile(targetId); lifecycleScope.launch(Dispatchers.IO) { for (i in 0..20) { val realPath = TdLibManager.getFilePath(targetId); if (realPath != null && File(realPath).exists() && File(realPath).length() > 1000) { withContext(Dispatchers.Main) { thumbPath = realPath; loadSharpImage(realPath); saveDraft() }; break }; delay(500) } } }
+    // תיקון בטיחות: בדיקה שהמסך קיים לפני הצגת הודעה
+    private fun safeToast(msg: String) { 
+        runOnUiThread { 
+            if (!isFinishing && !isDestroyed) {
+                Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() 
+            }
+        } 
+    }
+    
+    private fun startHDImageHunter(targetId: Int) { 
+        TdLibManager.downloadFile(targetId)
+        // שימוש ב-lifecycleScope כדי למנוע דליפות
+        lifecycleScope.launch(Dispatchers.IO) { 
+            for (i in 0..20) { 
+                val realPath = TdLibManager.getFilePath(targetId)
+                if (realPath != null && File(realPath).exists() && File(realPath).length() > 1000) { 
+                    withContext(Dispatchers.Main) { 
+                        if (!isFinishing) { thumbPath = realPath; loadSharpImage(realPath); saveDraft() }
+                    }
+                    break 
+                }; delay(500) 
+            } 
+        } 
+    }
     private fun loadSharpImage(path: String) { b.ivPreview.load(File(path)) { memoryCachePolicy(CachePolicy.DISABLED); diskCachePolicy(CachePolicy.DISABLED); crossfade(true); listener(onSuccess = { _, _ -> b.ivPreview.post { calculateMatrixBounds() } }) } }
 
     private fun setupTools() {
@@ -104,7 +132,7 @@ class DetailsActivity : AppCompatActivity() {
     
     private fun calculateMatrixBounds() { val d = b.ivPreview.drawable ?: return; val m = b.ivPreview.imageMatrix; val v = FloatArray(9); m.getValues(v); val w = d.intrinsicWidth * v[Matrix.MSCALE_X]; val h = d.intrinsicHeight * v[Matrix.MSCALE_Y]; imageBounds.set(v[Matrix.MTRANS_X], v[Matrix.MTRANS_Y], v[Matrix.MTRANS_X] + w, v[Matrix.MTRANS_Y] + h); b.drawingView.setValidBounds(imageBounds) }
     private fun restoreLogoPosition() { if (imageBounds.width() > 0) { b.ivDraggableLogo.x = imageBounds.left + (savedLogoRelX * imageBounds.width()); b.ivDraggableLogo.y = imageBounds.top + (savedLogoRelY * imageBounds.height()) } }
-    private fun setupMediaToggle() { b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked -> b.vDisabledOverlay.visibility = if (isChecked) android.view.View.GONE else android.view.View.VISIBLE; b.mediaToolsContainer.alpha = if (isChecked) 1.0f else 0.3f; b.btnModeBlur.isEnabled = isChecked; b.btnModeLogo.isEnabled = isChecked } }
+    private fun setupMediaToggle() { b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked -> b.vDisabledOverlay.visibility = if (isChecked) android.view.View.GONE else android.view.View.VISIBLE; b.mediaToolsContainer.alpha = if (isChecked && !isVideo) 1.0f else 0.3f; b.btnModeBlur.isEnabled = isChecked && !isVideo; b.btnModeLogo.isEnabled = isChecked && !isVideo } }
 
     private fun performSafeSend() {
         b.loadingOverlay.visibility = android.view.View.VISIBLE
@@ -118,12 +146,14 @@ class DetailsActivity : AppCompatActivity() {
         
         if (target.isEmpty()) { safeToast("No target set!"); b.loadingOverlay.visibility = android.view.View.GONE; b.btnSend.isEnabled = true; return }
         
-        GlobalScope.launch(Dispatchers.IO) {
+        // --- התיקון הגדול: שימוש ב-lifecycleScope במקום GlobalScope ---
+        // זה מבטיח שאם המסך נסגר, התהליך עוצר ולא מרסק את האפליקציה
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 if (!includeMedia) {
                     safeToast("Sending Text...")
                     TdLibManager.sendFinalMessage(target, caption, null, false)
-                    clearDraft(); runOnUiThread { finish() }
+                    clearDraft(); withContext(Dispatchers.Main) { finish() }
                     return@launch
                 }
 
@@ -133,11 +163,21 @@ class DetailsActivity : AppCompatActivity() {
                 }
                 
                 if (finalPath == null || !File(finalPath).exists()) {
-                    safeToast("File not found!"); runOnUiThread { b.loadingOverlay.visibility = android.view.View.GONE; b.btnSend.isEnabled = true }
+                    withContext(Dispatchers.Main) {
+                        safeToast("File not found!")
+                        if (!isFinishing) { b.loadingOverlay.visibility = android.view.View.GONE; b.btnSend.isEnabled = true }
+                    }
                     return@launch
                 }
 
-                safeToast("Processing...")
+                if (isVideo) {
+                    safeToast("Sending Video (Safe)...")
+                    TdLibManager.sendFinalMessage(target, caption, finalPath, true)
+                    clearDraft(); withContext(Dispatchers.Main) { finish() }
+                    return@launch
+                }
+                
+                safeToast("Processing Image...")
                 val rects = ArrayList<BlurRect>()
                 for (r in b.drawingView.rects) rects.add(BlurRect(r.left, r.top, r.right, r.bottom))
                 
@@ -150,36 +190,39 @@ class DetailsActivity : AppCompatActivity() {
                      }
                 }
                 
-                val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
+                val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.jpg").absolutePath
                 val relW = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
 
-                // כאן אנחנו קוראים למעבד המתוקן (שעכשיו גם מקטין את הוידאו אם צריך)
-                val success = if (isVideo) {
-                    var vidResult = false
-                    val lock = Object()
-                    MediaProcessor.processContent(applicationContext, finalPath, outPath, true, rects, logoUri, savedLogoRelX, savedLogoRelY, relW) { 
-                        vidResult = it; synchronized(lock) { lock.notify() } 
-                    }
-                    synchronized(lock) { lock.wait(120000) } // נותנים לו עד 2 דקות
-                    vidResult
-                } else {
-                    ImageUtils.processImage(applicationContext, finalPath, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
-                }
+                val success = ImageUtils.processImage(applicationContext, finalPath, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
 
-                if (success) {
-                    safeToast("Sending...")
-                    TdLibManager.sendFinalMessage(target, caption, outPath, isVideo)
-                    clearDraft(); runOnUiThread { finish() }
-                } else {
-                    safeToast("Edit failed, sending original...")
-                    TdLibManager.sendFinalMessage(target, caption, finalPath, isVideo)
-                    clearDraft(); runOnUiThread { finish() }
+                // חזרה לחוט הראשי לעדכון ממשק
+                withContext(Dispatchers.Main) {
+                    if (isFinishing || isDestroyed) return@withContext // הגנה מפני קריסה
+
+                    if (success) {
+                        safeToast("Sending...")
+                        // כאן מותר להשתמש ב-GlobalScope כי TdLib הוא עצמאי
+                        GlobalScope.launch(Dispatchers.IO) {
+                            TdLibManager.sendFinalMessage(target, caption, outPath, false)
+                        }
+                        clearDraft()
+                        finish()
+                    } else {
+                        safeToast("Edit failed, sending original...")
+                        GlobalScope.launch(Dispatchers.IO) {
+                            TdLibManager.sendFinalMessage(target, caption, finalPath, false)
+                        }
+                        clearDraft()
+                        finish()
+                    }
                 }
 
             } catch (e: Exception) {
                 Log.e("SEND", "Error", e)
-                safeToast("Error: ${e.message}")
-                runOnUiThread { b.loadingOverlay.visibility = android.view.View.GONE; b.btnSend.isEnabled = true }
+                withContext(Dispatchers.Main) {
+                    safeToast("Error: ${e.message}")
+                    if (!isFinishing) { b.loadingOverlay.visibility = android.view.View.GONE; b.btnSend.isEnabled = true }
+                }
             }
         }
     }
