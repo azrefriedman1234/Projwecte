@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
@@ -12,9 +13,9 @@ class DrawingView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0
 ) : View(context, attrs, defStyleAttr) {
 
-    private val currentRects = mutableListOf<BlurRect>()
+    private val currentRects = mutableListOf<RectF>()
     private val paint = Paint().apply {
-        color = 0x80FF0000.toInt() // אדום חצי שקוף
+        color = 0x80FF0000.toInt()
         style = Paint.Style.FILL
     }
     private val borderPaint = Paint().apply {
@@ -29,9 +30,41 @@ class DrawingView @JvmOverloads constructor(
     private var currentX = 0f
     private var currentY = 0f
     private var isDrawing = false
+    
+    // גבולות התמונה האמיתיים (מחושב מבחוץ)
+    private var validBounds = RectF(0f, 0f, 0f, 0f)
 
-    val rects: List<BlurRect>
-        get() = currentRects.toList()
+    fun setValidBounds(bounds: RectF) {
+        this.validBounds = bounds
+    }
+
+    // החזרת ריבועים מנורמלים (0.0-1.0) ביחס לתמונה
+    fun getRectsRelative(imageBounds: RectF): List<BlurRect> {
+        val result = mutableListOf<BlurRect>()
+        if (imageBounds.width() <= 0 || imageBounds.height() <= 0) return result
+        
+        for (r in currentRects) {
+            // חיתוך הריבוע לגבולות התמונה (Clipping)
+            val left = Math.max(r.left, imageBounds.left)
+            val top = Math.max(r.top, imageBounds.top)
+            val right = Math.min(r.right, imageBounds.right)
+            val bottom = Math.min(r.bottom, imageBounds.bottom)
+            
+            if (right > left && bottom > top) {
+                // נרמול ל-0..1
+                val relLeft = (left - imageBounds.left) / imageBounds.width()
+                val relRight = (right - imageBounds.left) / imageBounds.width()
+                val relTop = (top - imageBounds.top) / imageBounds.height()
+                val relBottom = (bottom - imageBounds.top) / imageBounds.height()
+                
+                result.add(BlurRect(relLeft, relTop, relRight, relBottom))
+            }
+        }
+        return result
+    }
+
+    val rects: List<BlurRect> // תאימות לאחור
+        get() = getRectsRelative(validBounds)
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (!isBlurMode) return false
@@ -54,17 +87,13 @@ class DrawingView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP -> {
                 isDrawing = false
-                // שמירת הריבוע באופן יחסי (0.0 עד 1.0)
-                if (width > 0 && height > 0) {
-                    val left = Math.min(startX, currentX) / width
-                    val right = Math.max(startX, currentX) / width
-                    val top = Math.min(startY, currentY) / height
-                    val bottom = Math.max(startY, currentY) / height
-                    
-                    // הוספה רק אם הריבוע בגודל סביר
-                    if (Math.abs(right - left) > 0.01 && Math.abs(bottom - top) > 0.01) {
-                        currentRects.add(BlurRect(left, top, right, bottom))
-                    }
+                val left = Math.min(startX, currentX)
+                val right = Math.max(startX, currentX)
+                val top = Math.min(startY, currentY)
+                val bottom = Math.max(startY, currentY)
+                
+                if (Math.abs(right - left) > 10 && Math.abs(bottom - top) > 10) {
+                    currentRects.add(RectF(left, top, right, bottom))
                 }
                 invalidate()
                 return true
@@ -75,36 +104,18 @@ class DrawingView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-
-        // ציור ריבועים קיימים
+        // ציור ריבועים
         for (rect in currentRects) {
-            val l = rect.left * width
-            val r = rect.right * width
-            val t = rect.top * height
-            val b = rect.bottom * height
-            canvas.drawRect(l, t, r, b, paint)
-            canvas.drawRect(l, t, r, b, borderPaint)
+            canvas.drawRect(rect, paint)
+            canvas.drawRect(rect, borderPaint)
         }
-
-        // ציור הריבוע שכרגע נמתח
+        // ציור תוך כדי גרירה
         if (isDrawing) {
             val l = Math.min(startX, currentX)
             val r = Math.max(startX, currentX)
             val t = Math.min(startY, currentY)
             val b = Math.max(startY, currentY)
             canvas.drawRect(l, t, r, b, paint)
-        }
-    }
-
-    fun clear() {
-        currentRects.clear()
-        invalidate()
-    }
-    
-    fun undo() {
-        if (currentRects.isNotEmpty()) {
-            currentRects.removeAt(currentRects.lastIndex)
-            invalidate()
         }
     }
 }

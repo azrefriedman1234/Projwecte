@@ -101,25 +101,25 @@ object MediaProcessor {
             val nextStream = "[v$i]"
             val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
             
-            // חישוב פיקסלים מדויק וזוגי
             var pixelW = 0; var pixelH = 0; var pixelX = 0; var pixelY = 0
-            
-            if (useMath) {
-                 // שיטה ישנה - לא מומלץ, אבל כגיבוי
-                 // (לא בשימוש אם getDimensions עובד)
-            } else {
+            if (!useMath) {
+                // המרה מנורמלית (0..1) לפיקסלים אמיתיים
+                // אנחנו מקבלים פה מספרים מ-0.0 עד 1.0 (אחוזים מהתמונה)
                 pixelW = (width * (r.right - r.left)).toInt()
                 pixelH = (height * (r.bottom - r.top)).toInt()
                 pixelX = (width * r.left).toInt()
                 pixelY = (height * r.top).toInt()
                 
-                // התיקון הקריטי ל-500x500: כל מספר חייב להיות זוגי
+                // הגנה קריטית לקרופ: אסור לחרוג מגבולות הוידאו
+                if (pixelX + pixelW > width) pixelW = width - pixelX
+                if (pixelY + pixelH > height) pixelH = height - pixelY
+                
+                // זוגיות
                 if (pixelW % 2 != 0) pixelW--
                 if (pixelH % 2 != 0) pixelH--
                 if (pixelX % 2 != 0) pixelX--
                 if (pixelY % 2 != 0) pixelY--
                 
-                // הגנה מינימלית
                 if (pixelW < 4) pixelW = 4
                 if (pixelH < 4) pixelH = 4
             }
@@ -129,9 +129,9 @@ object MediaProcessor {
             val xStr = pixelX.toString()
             val yStr = pixelY.toString()
             
-            // שיפור האיכות: הקטנה פי 5 במקום פי 15 (הרבה יותר חד)
+            // שיפור איכות הטשטוש: שימוש ב-flags=bicubic לקבלת תוצאה חלקה יותר
             filter.append("$currentStream split=2[$splitName][$cropName];")
-            filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=iw/5:-1,scale=$wStr:$hStr[$blurName];")
+            filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=iw/4:-1:flags=bicubic,scale=$wStr:$hStr:flags=bicubic[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream;")
             currentStream = nextStream
         }
@@ -142,9 +142,19 @@ object MediaProcessor {
             if (targetLogoW < 10) targetLogoW = 10 
 
             filter.append("[1:v]scale=$targetLogoW:-1[logo];")
-            val bx = fmt(lX)
-            val by = fmt(lY)
-            filter.append("$currentStream[logo]overlay=x=(W-w)*$bx:y=(H-h)*$by[v_done]")
+            
+            // חישוב מיקום לוגו: X = (ImageW * lX) - (LogoW / 2)
+            // מכיוון שאנחנו מקבלים lX כמרכז הלוגו באחוזים
+            // FFmpeg overlay לוקח פינה שמאלית עליונה
+            
+            val posX = (width * lX) - (targetLogoW / 2.0)
+            val posY = (height * lY) - ((targetLogoW * 1.0) / 2.0) // הערכה לגובה, ה-overlay יסתדר
+            
+            // שימוש בפורמט פשוט למיקום (בלי נוסחאות מסובכות בתוך הסטרינג)
+            val finalX = posX.toInt()
+            val finalY = posY.toInt()
+
+            filter.append("$currentStream[logo]overlay=x=$finalX:y=$finalY[v_done]")
         } else {
             filter.append("${currentStream}scale=iw:ih[v_done]")
         }
@@ -155,12 +165,11 @@ object MediaProcessor {
         if (isVideo) {
             args.add("-c:v"); args.add("libx264")
             args.add("-preset"); args.add("ultrafast")
-            args.add("-crf"); args.add("26") // איכות טובה יותר
+            args.add("-crf"); args.add("24") // איכות טובה מאוד
             args.add("-pix_fmt"); args.add("yuv420p")
-            args.add("-max_muxing_queue_size"); args.add("1024") // מונע קריסה בעומס
             args.add("-c:a"); args.add("copy")
         } else {
-            args.add("-q:v"); args.add("2") // איכות תמונה גבוהה (2-3 זה מעולה ב-jpg)
+            args.add("-q:v"); args.add("1") // איכות JPEG מקסימלית (1=הכי טוב)
         }
         args.add(finalOutputPath)
 
@@ -172,7 +181,6 @@ object MediaProcessor {
                 val logs = session.allLogsAsString
                 val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
                 showToast(context, "❌ Fix Failed!\n$errorMsg")
-                Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
         }
