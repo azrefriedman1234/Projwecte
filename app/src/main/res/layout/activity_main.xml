@@ -80,7 +80,9 @@
             android:layout_height="wrap_content" 
             android:hint="API ID" 
             android:inputType="number" 
-            android:background="@null" 
+            android:background="@null"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_secondary"
             android:padding="12dp" 
             android:layout_marginBottom="16dp"/>
             
@@ -96,6 +98,8 @@
             android:layout_height="wrap_content" 
             android:hint="API Hash" 
             android:background="@null" 
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_secondary"
             android:padding="12dp" 
             android:layout_marginBottom="24dp"/>
         
@@ -144,6 +148,8 @@
                 android:layout_height="wrap_content" 
                 android:hint="+972..." 
                 android:background="@drawable/bg_cyber_input" 
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
                 android:padding="16dp" 
                 android:textSize="18sp" 
                 android:layout_marginBottom="24dp"/>
@@ -173,6 +179,8 @@
                 android:letterSpacing="0.3" 
                 android:textSize="24sp" 
                 android:background="@drawable/bg_cyber_input" 
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
                 android:padding="16dp" 
                 android:layout_marginBottom="24dp"/>
                 
@@ -199,6 +207,8 @@
                 android:hint="2FA Password" 
                 android:inputType="textPassword" 
                 android:background="@drawable/bg_cyber_input" 
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
                 android:padding="16dp" 
                 android:layout_marginBottom="24dp"/>
                 
