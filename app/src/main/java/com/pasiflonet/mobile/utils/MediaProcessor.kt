@@ -22,10 +22,6 @@ object MediaProcessor {
         }
     }
 
-    private fun fmt(value: Float): String {
-        return String.format(Locale.US, "%.4f", value)
-    }
-
     private fun getDimensions(path: String, isVideo: Boolean): Pair<Int, Int> {
         return try {
             if (isVideo) {
@@ -88,8 +84,8 @@ object MediaProcessor {
         }
 
         val (width, height) = getDimensions(safeInput.absolutePath, isVideo)
-        val useMath = (width == 0 || height == 0)
-
+        
+        // --- בניית הפקודה החדשה ---
         val args = mutableListOf<String>()
         args.add("-y")
         args.add("-i"); args.add(safeInput.absolutePath)
@@ -99,47 +95,41 @@ object MediaProcessor {
         }
 
         val filter = StringBuilder()
-        var currentStream = "[0:v]"
+        var currentStream = "[0:v]" // הזרם הראשי
         
+        // שימוש בפילטר 'delogo' - פילטר אחד שעושה את כל העבודה
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
-            // התיקון הגדול: הוספת האינדקס i לשמות כדי למנוע כפילויות
-            // main -> main_0, main_1...
-            val splitName = "main_$i"
-            val cropName = "tocrop_$i"
-            val blurName = "blurred_$i"
             
-            val cropCmd = if (useMath) {
-                val w = "trunc(iw*${fmt(r.right-r.left)})"
-                val h = "trunc(ih*${fmt(r.bottom-r.top)})"
-                val x = "trunc(iw*${fmt(r.left)})"
-                val y = "trunc(ih*${fmt(r.top)})"
-                "crop=$w:$h:$x:$y"
-            } else {
-                var pixelW = (width * (r.right - r.left)).toInt()
-                var pixelH = (height * (r.bottom - r.top)).toInt()
-                var pixelX = (width * r.left).toInt()
-                var pixelY = (height * r.top).toInt()
-                
-                if (pixelW % 2 != 0) pixelW--
-                if (pixelH % 2 != 0) pixelH--
-                
-                "crop=$pixelW:$pixelH:$pixelX:$pixelY"
-            }
+            // חישוב פיקסלים מדויק
+            var w = (width * (r.right - r.left)).toInt()
+            var h = (height * (r.bottom - r.top)).toInt()
+            var x = (width * r.left).toInt()
+            var y = (height * r.top).toInt()
             
-            // שרשור הפקודה עם השמות הייחודיים
-            filter.append("$currentStream split=2[$splitName][$cropName];[$cropName]$cropCmd,boxblur=10:1[$blurName];[$splitName][$blurName]overlay=${if(useMath) "trunc(iw*${fmt(r.left)})" else (width*r.left).toInt()}:${if(useMath) "trunc(ih*${fmt(r.top)})" else (height*r.top).toInt()}$nextStream;")
+            // הגנה מפני קריסה: רוחב/גובה חייבים להיות חיוביים
+            if (w < 1) w = 1
+            if (h < 1) h = 1
+            
+            // השרשור הפשוט: זרם כניסה -> טשטוש -> זרם יציאה
+            // בלי split, בלי crop, בלי overlay
+            filter.append("$currentStream delogo=x=$x:y=$y:w=$w:h=$h $nextStream;")
             currentStream = nextStream
         }
 
+        // הוספת לוגו בסוף השרשרת (אם יש)
         if (logoPath != null) {
-            val s = fmt(lScale)
-            val lx = fmt(lX)
-            val ly = fmt(lY)
+            // חישוב מידות לוגו
+            val s = String.format(Locale.US, "%.4f", lScale)
+            val lx = (width * lX).toInt()
+            val ly = (height * lY).toInt()
+
             filter.append("[1:v]scale=trunc(iw*$s):-1[logo];")
-            filter.append("$currentStream[logo]overlay=x=trunc(W*$lx):y=trunc(H*$ly)[v_done]")
+            filter.append("$currentStream[logo]overlay=x=$lx:y=$ly[v_done]")
         } else {
-            filter.append("${currentStream}scale=iw:ih[v_done]")
+            // אם אין לוגו, הזרם האחרון הוא התוצאה
+            // (משתמשים בפילטר null כדי רק לשנות שם, למניעת שגיאות)
+            filter.append("${currentStream}null[v_done]")
         }
 
         args.add("-filter_complex"); args.add(filter.toString())
