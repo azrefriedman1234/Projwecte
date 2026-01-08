@@ -5,12 +5,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Rect
-import android.graphics.RectF
 import android.net.Uri
 import android.util.Log
 import com.arthenica.ffmpegkit.FFmpegKit
-import com.arthenica.ffmpegkit.FFmpegKitConfig
 import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
@@ -29,35 +26,28 @@ object MediaProcessor {
         logoRelW: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        Log.d("MediaProcessor", "Starting process. Video=$isVideo")
+        Log.d("MediaProcessor", "Starting safe process. Video=$isVideo")
 
-        // נתיב מהיר: אם זו תמונה, נשתמש במנוע הגרפי הקליל של אנדרואיד
+        // תמונות: שימוש במנוע הגרפי הבטוח (Native)
         if (!isVideo) {
             try {
-                processImageNative(context, inputPath, outputPath, blurRects, logoUri, logoRelX, logoRelY, logoRelW)
+                processImageSafe(context, inputPath, outputPath, blurRects, logoUri, logoRelX, logoRelY, logoRelW)
                 onComplete(true)
-            } catch (e: Exception) {
-                Log.e("MediaProcessor", "Native image processing failed, fallback to copy", e)
-                try {
-                    File(inputPath).copyTo(File(outputPath), overwrite = true)
-                    onComplete(true)
-                } catch (e2: Exception) { onComplete(false) }
+            } catch (t: Throwable) { // תופס גם OutOfMemoryError!
+                Log.e("MediaProcessor", "CRITICAL: Processing failed/OOM. Fallback to copy.", t)
+                fallbackCopy(inputPath, outputPath, onComplete)
             }
             return
         }
 
-        // --- מכאן והלאה: טיפול בוידאו בלבד (FFmpeg) ---
-        
-        // 1. אם אין עריכות בוידאו - מעתיקים
+        // --- וידאו (FFmpeg) ---
+        // אם אין עריכות - מעתיקים
         if (blurRects.isEmpty() && logoUri == null) {
-            try {
-                File(inputPath).copyTo(File(outputPath), overwrite = true)
-                onComplete(true)
-            } catch (e: Exception) { onComplete(false) }
+            fallbackCopy(inputPath, outputPath, onComplete)
             return
         }
 
-        // 2. הכנת לוגו לוידאו
+        // הכנת לוגו לוידאו
         var logoPath: String? = null
         if (logoUri != null) {
             try {
@@ -65,13 +55,15 @@ object MediaProcessor {
                 val bitmap = BitmapFactory.decodeStream(inputStream)
                 val file = File(context.cacheDir, "ffmpeg_logo_temp.png")
                 val out = FileOutputStream(file)
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                // הקטנת לוגו אם הוא ענק למניעת קריסת FFmpeg
+                val scaledLogo = if (bitmap.width > 500) Bitmap.createScaledBitmap(bitmap, 500, (500f/bitmap.width*bitmap.height).toInt(), true) else bitmap
+                scaledLogo.compress(Bitmap.CompressFormat.PNG, 100, out)
                 out.flush(); out.close()
                 logoPath = file.absolutePath
             } catch (e: Exception) {}
         }
 
-        // 3. פקודת FFmpeg לוידאו
+        // פקודת FFmpeg
         val cmd = StringBuilder()
         cmd.append("-y -i \"$inputPath\" ")
         if (logoPath != null) cmd.append("-i \"$logoPath\" ")
@@ -92,7 +84,6 @@ object MediaProcessor {
         if (logoPath != null) {
             val x = (logoRelX * 100).toInt(); val y = (logoRelY * 100).toInt()
             val scaleFactor = logoRelW
-            // מתמטיקה בטוחה למספרים זוגיים
             cmd.append("[1:v]scale=trunc(iw*$scaleFactor/2)*2:-2[logo];${stream}[logo]overlay=trunc(W*$x/100/2)*2:trunc(H*$y/100/2)*2")
         } else {
             if (blurRects.isNotEmpty()) cmd.setLength(cmd.length - 1) else cmd.append("null")
@@ -103,67 +94,53 @@ object MediaProcessor {
         try {
             FFmpegKit.executeAsync(cmd.toString()) { session ->
                 if (ReturnCode.isSuccess(session.returnCode)) onComplete(true)
-                else {
-                    // Fallback לוידאו
-                    try { File(inputPath).copyTo(File(outputPath), overwrite = true); onComplete(true) } 
-                    catch (e: Exception) { onComplete(false) }
-                }
+                else fallbackCopy(inputPath, outputPath, onComplete)
             }
-        } catch (e: Exception) { onComplete(false) }
+        } catch (e: Exception) { fallbackCopy(inputPath, outputPath, onComplete) }
     }
 
-    // --- המנוע החדש: עיבוד תמונה טהור (ללא FFmpeg) ---
-    private fun processImageNative(
+    // --- מנוע תמונה בטוח מפני קריסות זיכרון ---
+    private fun processImageSafe(
         context: Context, inputPath: String, outputPath: String,
         blurRects: List<BlurRect>, logoUri: Uri?,
         relX: Float, relY: Float, relW: Float
     ) {
-        // 1. טעינת התמונה המקורית לזיכרון (Mutable כדי שנוכל לצייר עליה)
-        val opts = BitmapFactory.Options()
-        opts.inMutable = true
-        var bitmap = BitmapFactory.decodeFile(inputPath, opts)
+        // 1. חישוב גודל אופטימלי (Downsampling) כדי לא לפוצץ זיכרון
+        val options = BitmapFactory.Options()
+        options.inJustDecodeBounds = true
+        BitmapFactory.decodeFile(inputPath, options)
         
-        // אם אי אפשר לטעון כ-Mutable, מעתיקים
-        if (!bitmap.isMutable) {
-            val copy = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-            bitmap.recycle()
-            bitmap = copy
-        }
+        // מגבילים לרזולוציה של בערך 2000x2000 (מספיק לטלגרם, חוסך המון זיכרון)
+        options.inSampleSize = calculateInSampleSize(options, 2048, 2048)
+        options.inJustDecodeBounds = false
+        options.inMutable = true
+        
+        var bitmap = BitmapFactory.decodeFile(inputPath, options) ?: throw Exception("Failed to decode image")
 
         val canvas = Canvas(bitmap)
         val w = bitmap.width.toFloat()
         val h = bitmap.height.toFloat()
 
-        // 2. ביצוע טשטוש (Pixelate אפקטיבי)
+        // 2. טשטוש
         if (blurRects.isNotEmpty()) {
             val paint = Paint()
             for (rect in blurRects) {
-                // חישוב האזור לטשטוש
                 val left = (rect.left * w).toInt()
                 val top = (rect.top * h).toInt()
                 val right = (rect.right * w).toInt()
                 val bottom = (rect.bottom * h).toInt()
                 
-                val roiW = right - left
-                val roiH = bottom - top
-                
-                if (roiW > 0 && roiH > 0) {
-                    // חיתוך האזור
-                    val roi = Bitmap.createBitmap(bitmap, left, top, roiW, roiH)
-                    // הקטנה דרסטית (יוצר פיקסליזציה)
-                    val small = Bitmap.createScaledBitmap(roi, Math.max(1, roiW/20), Math.max(1, roiH/20), true)
-                    // הגדלה חזרה
-                    val pixelated = Bitmap.createScaledBitmap(small, roiW, roiH, false)
-                    
-                    // ציור חזרה על התמונה המקורית
+                if (right > left && bottom > top) {
+                    val roi = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+                    val small = Bitmap.createScaledBitmap(roi, Math.max(1, roi.width/15), Math.max(1, roi.height/15), true)
+                    val pixelated = Bitmap.createScaledBitmap(small, roi.width, roi.height, false)
                     canvas.drawBitmap(pixelated, left.toFloat(), top.toFloat(), paint)
-                    
                     roi.recycle(); small.recycle(); pixelated.recycle()
                 }
             }
         }
 
-        // 3. הוספת לוגו
+        // 3. לוגו
         if (logoUri != null) {
             try {
                 val inputStream = context.contentResolver.openInputStream(logoUri)
@@ -171,29 +148,43 @@ object MediaProcessor {
                 inputStream?.close()
 
                 if (logoBmp != null) {
-                    // חישוב גודל הלוגו יחסית לתמונה
                     val finalLogoW = (w * relW).toInt()
                     val ratio = logoBmp.height.toFloat() / logoBmp.width.toFloat()
                     val finalLogoH = (finalLogoW * ratio).toInt()
-                    
                     val scaledLogo = Bitmap.createScaledBitmap(logoBmp, finalLogoW, finalLogoH, true)
                     
-                    val drawX = w * relX
-                    val drawY = h * relY
-                    
-                    canvas.drawBitmap(scaledLogo, drawX, drawY, null)
+                    canvas.drawBitmap(scaledLogo, w * relX, h * relY, null)
                     if (scaledLogo != logoBmp) scaledLogo.recycle()
                     logoBmp.recycle()
                 }
-            } catch (e: Exception) { Log.e("MediaProcessor", "Logo draw failed", e) }
+            } catch (e: Exception) { Log.e("MediaProcessor", "Logo draw error", e) }
         }
 
-        // 4. שמירה לקובץ יעד
+        // 4. שמירה
         val outStream = FileOutputStream(outputPath)
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 90, outStream)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, outStream) // איכות 85% חוסכת זיכרון ומהירה יותר
         outStream.flush()
         outStream.close()
-        
-        bitmap.recycle() // שחרור זיכרון
+        bitmap.recycle()
+    }
+
+    private fun fallbackCopy(input: String, output: String, callback: (Boolean) -> Unit) {
+        try {
+            File(input).copyTo(File(output), overwrite = true)
+            callback(true)
+        } catch (e: Exception) { callback(false) }
+    }
+
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        val (height: Int, width: Int) = options.outHeight to options.outWidth
+        var inSampleSize = 1
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight: Int = height / 2
+            val halfWidth: Int = width / 2
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
     }
 }
