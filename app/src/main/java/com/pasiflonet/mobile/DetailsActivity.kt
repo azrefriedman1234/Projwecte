@@ -120,9 +120,7 @@ class DetailsActivity : AppCompatActivity() {
             
             imageBounds.set(globalX, globalY, globalX + actualW, globalY + actualH)
             b.drawingView.setValidBounds(imageBounds)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
     }
     
     private fun restoreLogoPosition() { if (imageBounds.width() > 0) { b.ivDraggableLogo.x = imageBounds.left + (savedLogoRelX * imageBounds.width()); b.ivDraggableLogo.y = imageBounds.top + (savedLogoRelY * imageBounds.height()) } }
@@ -143,8 +141,6 @@ class DetailsActivity : AppCompatActivity() {
         b.ivDraggableLogo.setOnTouchListener { view, event -> if (b.drawingView.isBlurMode) return@setOnTouchListener false; when (event.action) { android.view.MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }; android.view.MotionEvent.ACTION_MOVE -> { var newX = event.rawX + dX; var newY = event.rawY + dY; if (newX < imageBounds.left) newX = imageBounds.left; if (newX + view.width > imageBounds.right) newX = imageBounds.right - view.width; if (newY < imageBounds.top) newY = imageBounds.top; if (newY + view.height > imageBounds.bottom) newY = imageBounds.bottom - view.height; view.x = newX; view.y = newY; if (imageBounds.width() > 0) { savedLogoRelX = (newX - imageBounds.left) / imageBounds.width(); savedLogoRelY = (newY - imageBounds.top) / imageBounds.height() } } }; true }
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener { override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { val scale = 0.5f + (p / 50f); b.ivDraggableLogo.scaleX = scale; b.ivDraggableLogo.scaleY = scale; savedLogoScale = scale }; override fun onStartTrackingTouch(sb: SeekBar?) {}; override fun onStopTrackingTouch(sb: SeekBar?) {} })
         b.btnTranslate.setOnClickListener { lifecycleScope.launch { val t = b.etCaption.text.toString(); if (t.isNotEmpty()) b.etCaption.setText(TranslationManager.translateToHebrew(t)) } }
-        
-        // --- כפתור השליחה הבטוח ---
         b.btnSend.setOnClickListener { sendDataSafe() }
         b.btnCancel.setOnClickListener { finish() }
     }
@@ -152,11 +148,8 @@ class DetailsActivity : AppCompatActivity() {
     private fun getBitmapFromDrawable(drawable: Drawable): Bitmap { if (drawable is BitmapDrawable) return drawable.bitmap; val bitmap = Bitmap.createBitmap(drawable.intrinsicWidth, drawable.intrinsicHeight, Bitmap.Config.ARGB_8888); val canvas = Canvas(bitmap); drawable.setBounds(0, 0, canvas.width, canvas.height); drawable.draw(canvas); return bitmap }
     private fun cleanFloat(v: Float): Float { if (v.isNaN() || v.isInfinite()) return 0.0f; if (v < 0f) return 0f; if (v > 1f) return 1f; return v }
 
-    // --- הפונקציה המוגנת למניעת קריסות ---
     private fun sendDataSafe() {
-        try {
-            sendData()
-        } catch (e: Exception) {
+        try { sendData() } catch (e: Exception) {
             Log.e("SEND_CRASH", "Error sending data", e)
             Toast.makeText(this, "Critical Error: ${e.message}", Toast.LENGTH_LONG).show()
         }
@@ -183,38 +176,27 @@ class DetailsActivity : AppCompatActivity() {
         
         var logoUriStr = prefs.getString("logo_uri", null); var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
         
-        // שמירת לוגו זמנית - מוגנת
         if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE && logoUri == null) {
             try { 
                 val drawable = b.ivDraggableLogo.drawable
                 if (drawable != null) { 
                     val bitmap = getBitmapFromDrawable(drawable)
-                    val file = File(cacheDir, "captured_logo_final.png")
-                    val out = FileOutputStream(file)
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                    out.flush(); out.close()
-                    logoUri = Uri.fromFile(file) 
+                    val file = File(cacheDir, "captured_logo_final.png"); val out = FileOutputStream(file)
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); out.flush(); out.close(); logoUri = Uri.fromFile(file) 
                 } 
-            } catch (e: Exception) { 
-                Toast.makeText(this, "Logo Save Error: ${e.message}", Toast.LENGTH_SHORT).show()
-                return 
-            }
+            } catch (e: Exception) { Toast.makeText(this, "Logo Save Error: ${e.message}", Toast.LENGTH_SHORT).show(); return }
         }
 
         Toast.makeText(this, "Processing...", Toast.LENGTH_SHORT).show()
-        finish() // סגירה כדי למנוע לחיצות כפולות
+        finish() 
 
         GlobalScope.launch(Dispatchers.IO) {
-            // WakeLock מוגן ב-Try/Catch
             var wakeLock: PowerManager.WakeLock? = null
             try {
                 val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
                 wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Pasiflonet:EncodeLock")
                 wakeLock?.acquire(10*60*1000L)
-            } catch (e: Exception) {
-                Log.e("WAKELOCK", "Failed to acquire wakelock", e)
-                // ממשיכים גם בלי WakeLock אם נכשל
-            }
+            } catch (e: Exception) {}
 
             try {
                 if (!includeMedia) { TdLibManager.sendFinalMessage(target, caption, null, false); return@launch }
@@ -239,11 +221,14 @@ class DetailsActivity : AppCompatActivity() {
                 val extension = if(isVideo) "mp4" else "png"
                 val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
+                // התיקון: ה-Callback עכשיו פותח Launch חדש כדי לאפשר קריאה ל-suspend
                 MediaProcessor.processContent(applicationContext, finalPath, outputPath, isVideo, rectsSnapshot, logoUri, logoRelXSnapshot, logoRelYSnapshot, relativeWidthSnapshot) { success -> 
-                    if (success) {
-                        TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
-                    } else {
-                        withContext(Dispatchers.Main) { Toast.makeText(applicationContext, "Encoding Failed!", Toast.LENGTH_LONG).show() }
+                    GlobalScope.launch(Dispatchers.IO) {
+                        if (success) {
+                            TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
+                        } else {
+                            withContext(Dispatchers.Main) { Toast.makeText(applicationContext, "Encoding Failed!", Toast.LENGTH_LONG).show() }
+                        }
                     }
                 }
             } catch (e: Exception) {
