@@ -74,7 +74,11 @@ class DetailsActivity : AppCompatActivity() {
             }
             
             setupTools(); setupMediaToggle()
-        } catch (e: Exception) { Toast.makeText(this, "Init Error: ${e.message}", Toast.LENGTH_LONG).show() }
+        } catch (e: Exception) { safeToast("Init Error: ${e.message}") }
+    }
+
+    private fun safeToast(msg: String) {
+        runOnUiThread { Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() }
     }
 
     private fun startHDImageHunter(targetId: Int) {
@@ -107,17 +111,10 @@ class DetailsActivity : AppCompatActivity() {
             val values = FloatArray(9)
             imageMatrix.getValues(values)
             
-            val globalX = values[Matrix.MTRANS_X]
-            val globalY = values[Matrix.MTRANS_Y]
-            val scaleX = values[Matrix.MSCALE_X]
-            val scaleY = values[Matrix.MSCALE_Y]
-            
-            val origW = drawable.intrinsicWidth
-            val origH = drawable.intrinsicHeight
-            
-            val actualW = Math.round(origW * scaleX).toFloat()
-            val actualH = Math.round(origH * scaleY).toFloat()
-            
+            val globalX = values[Matrix.MTRANS_X]; val globalY = values[Matrix.MTRANS_Y]
+            val scaleX = values[Matrix.MSCALE_X]; val scaleY = values[Matrix.MSCALE_Y]
+            val origW = drawable.intrinsicWidth; val origH = drawable.intrinsicHeight
+            val actualW = Math.round(origW * scaleX).toFloat(); val actualH = Math.round(origH * scaleY).toFloat()
             imageBounds.set(globalX, globalY, globalX + actualW, globalY + actualH)
             b.drawingView.setValidBounds(imageBounds)
         } catch (e: Exception) { e.printStackTrace() }
@@ -151,14 +148,14 @@ class DetailsActivity : AppCompatActivity() {
     private fun sendDataSafe() {
         try { sendData() } catch (e: Exception) {
             Log.e("SEND_CRASH", "Error sending data", e)
-            Toast.makeText(this, "Critical Error: ${e.message}", Toast.LENGTH_LONG).show()
+            safeToast("Critical Error: ${e.message}")
         }
     }
 
     private fun sendData() {
         val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         val target = prefs.getString("target_username", "") ?: ""
-        if (target.isEmpty()) { Toast.makeText(this, "Set Target!", Toast.LENGTH_SHORT).show(); return }
+        if (target.isEmpty()) { safeToast("Set Target!"); return }
         
         val caption = b.etCaption.text.toString(); val includeMedia = b.swIncludeMedia.isChecked
         val targetId = if (thumbId != 0) thumbId else fileId; val currentThumbPath = thumbPath
@@ -167,12 +164,6 @@ class DetailsActivity : AppCompatActivity() {
 
         val rectsSnapshot = ArrayList<BlurRect>()
         for (r in b.drawingView.rects) { rectsSnapshot.add(BlurRect(cleanFloat(r.left), cleanFloat(r.top), cleanFloat(r.right), cleanFloat(r.bottom))) }
-
-        val boundsW = if (imageBounds.width() > 0) imageBounds.width() else 1000f
-        val logoW = b.ivDraggableLogo.width * savedLogoScale
-        var relW = logoW / boundsW; if (relW.isNaN() || relW <= 0) relW = 0.2f
-        val relativeWidthSnapshot = relW
-        val logoRelXSnapshot = cleanFloat(savedLogoRelX); val logoRelYSnapshot = cleanFloat(savedLogoRelY)
         
         var logoUriStr = prefs.getString("logo_uri", null); var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
         
@@ -184,11 +175,18 @@ class DetailsActivity : AppCompatActivity() {
                     val file = File(cacheDir, "captured_logo_final.png"); val out = FileOutputStream(file)
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, out); out.flush(); out.close(); logoUri = Uri.fromFile(file) 
                 } 
-            } catch (e: Exception) { Toast.makeText(this, "Logo Save Error: ${e.message}", Toast.LENGTH_SHORT).show(); return }
+            } catch (e: Exception) { safeToast("Logo Error: ${e.message}"); return }
         }
 
-        Toast.makeText(this, "Processing...", Toast.LENGTH_SHORT).show()
-        finish() 
+        // חישוב נתונים לוגיים לפני כניסה ל-Coroutine
+        val boundsW = if (imageBounds.width() > 0) imageBounds.width() else 1000f
+        val logoW = b.ivDraggableLogo.width * savedLogoScale
+        var relW = logoW / boundsW; if (relW.isNaN() || relW <= 0) relW = 0.2f
+        val relativeWidthSnapshot = relW
+        val logoRelXSnapshot = cleanFloat(savedLogoRelX); val logoRelYSnapshot = cleanFloat(savedLogoRelY)
+
+        safeToast("1. Starting Process...")
+        finish() // סגירה בטוחה של המסך
 
         GlobalScope.launch(Dispatchers.IO) {
             var wakeLock: PowerManager.WakeLock? = null
@@ -199,8 +197,13 @@ class DetailsActivity : AppCompatActivity() {
             } catch (e: Exception) {}
 
             try {
-                if (!includeMedia) { TdLibManager.sendFinalMessage(target, caption, null, false); return@launch }
+                if (!includeMedia) { 
+                    safeToast("Sending Text Only...")
+                    TdLibManager.sendFinalMessage(target, caption, null, false)
+                    return@launch 
+                }
                 
+                safeToast("2. Finding File...")
                 var finalPath = currentThumbPath
                 if (finalPath == null || !File(finalPath).exists()) {
                     if (targetId != 0) { 
@@ -214,26 +217,33 @@ class DetailsActivity : AppCompatActivity() {
                 }
                 
                 if (finalPath == null || !File(finalPath).exists()) {
-                     withContext(Dispatchers.Main) { Toast.makeText(applicationContext, "Error: File not found!", Toast.LENGTH_LONG).show() }
+                     safeToast("Error: File not found!")
                      return@launch
                 }
 
+                safeToast("3. Processing Media...")
                 val extension = if(isVideo) "mp4" else "png"
                 val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
-                // התיקון לקריסה: הוספתי GlobalScope.launch בתוך הסוגריים המסולסלים!
+                // קריאה למעבד עם הגנה
                 MediaProcessor.processContent(applicationContext, finalPath, outputPath, isVideo, rectsSnapshot, logoUri, logoRelXSnapshot, logoRelYSnapshot, relativeWidthSnapshot) { success -> 
-                    GlobalScope.launch(Dispatchers.IO) {
+                    // שימוש ב-runOnUiThread כדי למנוע קריסה מתוך ה-Callback
+                    runOnUiThread {
                         if (success) {
-                            TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
+                            Toast.makeText(applicationContext, "4. Sending...", Toast.LENGTH_SHORT).show()
+                            // כאן מותר להפעיל פעולת רשת כי TdLib מנהל את זה בנפרד
+                            GlobalScope.launch(Dispatchers.IO) {
+                                try { TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo) }
+                                catch(e: Exception) { safeToast("Send Failed: ${e.message}") }
+                            }
                         } else {
-                            withContext(Dispatchers.Main) { Toast.makeText(applicationContext, "Encoding Failed!", Toast.LENGTH_LONG).show() }
+                            Toast.makeText(applicationContext, "Encoding Failed!", Toast.LENGTH_LONG).show()
                         }
                     }
                 }
             } catch (e: Exception) {
-                 Log.e("PROCESS_CRASH", "Critical failure in background process", e)
-                 withContext(Dispatchers.Main) { Toast.makeText(applicationContext, "Background Error: ${e.message}", Toast.LENGTH_LONG).show() }
+                 Log.e("PROCESS_CRASH", "Critical failure", e)
+                 safeToast("Background Error: ${e.message}")
             } finally { 
                 try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (e: Exception) {} 
             }
