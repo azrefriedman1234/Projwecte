@@ -2,13 +2,11 @@ package com.pasiflonet.mobile
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
-import android.view.MotionEvent
 import android.view.ViewTreeObserver
 import android.widget.SeekBar
 import android.widget.Toast
@@ -131,7 +129,7 @@ class DetailsActivity : AppCompatActivity() {
             val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
             val uriStr = prefs.getString("logo_uri", null)
             if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.clearColorFilter() } 
-            else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
+            else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(android.graphics.Color.WHITE) }
             b.ivDraggableLogo.post {
                 updateImageBounds()
                 savedLogoRelX = 0.5f - ((b.ivDraggableLogo.width / 2f) / imageBounds.width())
@@ -142,8 +140,8 @@ class DetailsActivity : AppCompatActivity() {
         b.ivDraggableLogo.setOnTouchListener { view, event ->
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }
-                MotionEvent.ACTION_MOVE -> {
+                android.view.MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }
+                android.view.MotionEvent.ACTION_MOVE -> {
                     var newX = event.rawX + dX; var newY = event.rawY + dY
                     if (newX < imageBounds.left) newX = imageBounds.left
                     if (newX + view.width > imageBounds.right) newX = imageBounds.right - view.width
@@ -178,33 +176,35 @@ class DetailsActivity : AppCompatActivity() {
         val target = prefs.getString("target_username", "") ?: ""
         if (target.isEmpty()) { Toast.makeText(this, "Set Target!", Toast.LENGTH_SHORT).show(); return }
         
-        // 1. איסוף נתונים מיידי (לפני סגירה)
         val caption = b.etCaption.text.toString()
         val includeMedia = b.swIncludeMedia.isChecked
         val targetId = if (thumbId != 0) thumbId else fileId
         val currentThumbPath = thumbPath
         
-        // וודא גבולות מעודכנים
+        // 1. חישוב ונעילת נתונים (Snapshot)
         updateImageBounds()
         
-        // העתקה עמוקה של רשימת הריבועים (כדי שלא תתאפס ביציאה)
-        val rects = ArrayList(b.drawingView.rects)
+        // העתקה עמוקה של רשימת הציורים
+        val rectsSnapshot = ArrayList(b.drawingView.rects)
         
-        // שמירת נתוני הלוגו כמשתנים מקומיים (Primitive types נשמרים)
-        val finalRelX = savedLogoRelX
-        val finalRelY = savedLogoRelY
-        val finalRelWidth = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
+        // חישוב רוחב יחסי
+        val relativeWidthSnapshot = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
+        
+        // שמירת מיקום לוגו
+        val logoRelXSnapshot = savedLogoRelX
+        val logoRelYSnapshot = savedLogoRelY
         
         var logoUriStr = prefs.getString("logo_uri", null)
         var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
 
-        // לכידת לוגו סינכרונית (חייב לקרות לפני finish())
+        // 2. לכידת לוגו בכוח (On-Spot Capture)
+        // אם הלוגו גלוי ואין לנו URI שמור, אנחנו יוצרים אחד עכשיו
         if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE && logoUri == null) {
             try {
                 val drawable = b.ivDraggableLogo.drawable
                 if (drawable != null) {
                     val bitmap = getBitmapFromDrawable(drawable)
-                    val file = File(cacheDir, "captured_logo_${System.currentTimeMillis()}.png")
+                    val file = File(cacheDir, "captured_logo_final.png") // שם קבוע כדי למנוע הצפה
                     val out = FileOutputStream(file)
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
                     out.flush(); out.close()
@@ -213,11 +213,15 @@ class DetailsActivity : AppCompatActivity() {
             } catch (e: Exception) { e.printStackTrace() }
         }
 
-        // 2. יציאה מיידית
-        Toast.makeText(this, "Processing in background...", Toast.LENGTH_SHORT).show()
+        // 3. דיווח למשתמש (Debug Feedback)
+        val logoStatus = if (logoUri != null) "Yes" else "No"
+        val blurCount = rectsSnapshot.size
+        Toast.makeText(this, "Sending: $blurCount Blurs, Logo: $logoStatus", Toast.LENGTH_SHORT).show()
+
+        // 4. סגירת מסך
         finish() 
 
-        // 3. תהליך הרקע עם הנתונים שנאספו למעלה
+        // 5. שיגור לרקע עם הנתונים המוקפאים
         GlobalScope.launch(Dispatchers.IO) {
             if (!includeMedia) {
                 TdLibManager.sendFinalMessage(target, caption, null, false)
@@ -225,8 +229,6 @@ class DetailsActivity : AppCompatActivity() {
             }
 
             var finalPath = currentThumbPath
-            
-            // המתנה להורדה אם צריך
             if (finalPath == null || !File(finalPath).exists()) {
                 if (targetId != 0) {
                      TdLibManager.downloadFile(targetId)
@@ -246,17 +248,17 @@ class DetailsActivity : AppCompatActivity() {
             val extension = if(isVideo) "mp4" else "png"
             val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
-            // שליחה למעבד עם הנתונים המקומיים שנשמרו
+            // שימוש במשתנים ה"מוקפאים" (Snapshot) ולא במשתני המחלקה
             MediaProcessor.processContent(
                 context = applicationContext, 
                 inputPath = finalPath,
                 outputPath = outputPath,
                 isVideo = isVideo,
-                rects = rects, // הרשימה המועתקת
-                logoUri = logoUri, // ה-URI שנלכד
-                lX = finalRelX,
-                lY = finalRelY,
-                lRelWidth = finalRelWidth,
+                rects = rectsSnapshot, 
+                logoUri = logoUri,
+                lX = logoRelXSnapshot,
+                lY = logoRelYSnapshot,
+                lRelWidth = relativeWidthSnapshot,
                 onComplete = { success ->
                     if (success) {
                         TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
