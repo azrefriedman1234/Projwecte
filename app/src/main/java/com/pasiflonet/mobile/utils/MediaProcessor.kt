@@ -11,8 +11,6 @@ import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
 
-// נמחק: data class BlurRect(...) - זה כבר קיים ב-Models.kt
-
 object MediaProcessor {
 
     fun processContent(
@@ -27,11 +25,10 @@ object MediaProcessor {
         logoRelW: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        Log.d("MediaProcessor", "Starting process for: $inputPath")
+        Log.d("MediaProcessor", "Starting process safe mode for: $inputPath")
 
         // 1. אם אין עריכות - מעתיקים
         if (blurRects.isEmpty() && logoUri == null) {
-            Log.d("MediaProcessor", "No edits needed. Copying file.")
             try {
                 File(inputPath).copyTo(File(outputPath), overwrite = true)
                 onComplete(true)
@@ -54,11 +51,11 @@ object MediaProcessor {
                 out.flush(); out.close()
                 logoPath = file.absolutePath
             } catch (e: Exception) {
-                Log.e("MediaProcessor", "Failed to prepare logo", e)
+                Log.e("MediaProcessor", "Logo error", e)
             }
         }
 
-        // 3. בניית פקודת FFmpeg
+        // 3. בניית פקודת FFmpeg בטוחה
         val cmd = StringBuilder()
         cmd.append("-y -i \"$inputPath\" ")
         
@@ -69,9 +66,12 @@ object MediaProcessor {
         cmd.append("-filter_complex \"")
         
         var stream = "[0:v]"
+        
+        // טשטוש
         if (blurRects.isNotEmpty()) {
             for (i in blurRects.indices) {
                 val r = blurRects[i]
+                // המרה לאחוזים שלמים כדי למנוע שברים
                 val x = (r.left * 100).toInt()
                 val y = (r.top * 100).toInt()
                 val w = ((r.right - r.left) * 100).toInt()
@@ -82,14 +82,20 @@ object MediaProcessor {
             }
         }
 
+        // לוגו - התיקון הגדול: אכיפת מספרים זוגיים
         if (logoPath != null) {
             val x = (logoRelX * 100).toInt()
             val y = (logoRelY * 100).toInt()
-            val w = (logoRelW * 100).toInt()
-            cmd.append("[1:v]scale=iw*$w/100:-1[logo];${stream}[logo]overlay=W*$x/100:H*$y/100")
+            // טריק מתמטי: מכפילים ב-0.5, מעגלים (trunc), ואז מכפילים ב-2.
+            // זה מבטיח שהתוצאה תמיד תהיה זוגית.
+            // שימוש ב- '-2' במימד השני שומר על יחס גובה-רוחב וגם מבטיח זוגיות.
+            val scaleFactor = logoRelW // בערך בין 0.2 ל 0.5
+            
+            // הנוסחה: scale=trunc(iw*FACTOR/2)*2:-2
+            cmd.append("[1:v]scale=trunc(iw*$scaleFactor/2)*2:-2[logo];${stream}[logo]overlay=trunc(W*$x/100/2)*2:trunc(H*$y/100/2)*2")
         } else {
             if (blurRects.isNotEmpty()) {
-                cmd.setLength(cmd.length - 1)
+                cmd.setLength(cmd.length - 1) // מחיקת נקודה-פסיק מיותר
             } else {
                 cmd.append("null")
             }
@@ -97,24 +103,27 @@ object MediaProcessor {
 
         cmd.append("\" ")
 
+        // 4. הגדרות קידוד בטוחות
         if (isVideo) {
-            cmd.append("-c:v libx264 -preset ultrafast -c:a copy ")
+            // הוספתי -pix_fmt yuv420p למניעת קריסות צבע
+            cmd.append("-c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a copy ")
         }
         
         cmd.append("\"$outputPath\"")
 
         val finalCommand = cmd.toString()
-        Log.d("MediaProcessor", "Executing FFmpeg: $finalCommand")
+        Log.d("MediaProcessor", "Exec: $finalCommand")
 
-        // 4. הרצה
         try {
             FFmpegKitConfig.enableLogCallback { log -> Log.d("FFmpeg", log.message) }
             
             FFmpegKit.executeAsync(finalCommand) { session ->
                 if (ReturnCode.isSuccess(session.returnCode)) {
+                    Log.d("MediaProcessor", "Success")
                     onComplete(true)
                 } else {
-                    Log.e("MediaProcessor", "FFmpeg failed. Fallback copy.")
+                    Log.e("MediaProcessor", "Failed. RC: ${session.returnCode}")
+                    // Fallback - העתקה רגילה במקרה של כישלון
                     try {
                         File(inputPath).copyTo(File(outputPath), overwrite = true)
                         onComplete(true)
@@ -124,7 +133,7 @@ object MediaProcessor {
                 }
             }
         } catch (e: Exception) {
-            Log.e("MediaProcessor", "Exception launching FFmpeg", e)
+            Log.e("MediaProcessor", "Crash launch", e)
             onComplete(false)
         }
     }
