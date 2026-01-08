@@ -4,8 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.RectF
 import android.graphics.Matrix
+import android.graphics.RectF
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.net.Uri
@@ -40,7 +40,7 @@ class DetailsActivity : AppCompatActivity() {
     private var fileId = 0
     private var thumbId = 0
     
-    // גבולות התמונה האמיתיים על המסך
+    // גבולות התמונה המדויקים (Matrix Mapped)
     private var imageBounds = RectF()
     
     private var savedLogoRelX = 0.5f
@@ -55,8 +55,7 @@ class DetailsActivity : AppCompatActivity() {
             b = ActivityDetailsBinding.inflate(layoutInflater)
             setContentView(b.root)
             
-            // --- תיקון פרופורציות קריטי ---
-            // מכריחים את התמונה להתאים בדיוק למסגרת בלי חיתוכים
+            // שימוש ב-FIT_CENTER לדיוק מירבי
             b.ivPreview.scaleType = ImageView.ScaleType.FIT_CENTER
             
             thumbPath = intent.getStringExtra("THUMB_PATH")
@@ -64,15 +63,15 @@ class DetailsActivity : AppCompatActivity() {
             fileId = intent.getIntExtra("FILE_ID", 0); thumbId = intent.getIntExtra("THUMB_ID", 0)
             isVideo = intent.getBooleanExtra("IS_VIDEO", false)
             b.etCaption.setText(intent.getStringExtra("CAPTION") ?: "")
-            
             if (miniThumb != null) b.ivPreview.load(miniThumb)
             
             val targetId = if (thumbId != 0) thumbId else fileId
             if (targetId != 0) startHDImageHunter(targetId) else if (thumbPath != null) loadSharpImage(thumbPath!!)
+            
             if (targetId == 0 && thumbPath.isNullOrEmpty()) { b.swIncludeMedia.isChecked = false; b.swIncludeMedia.isEnabled = false }
             
             b.ivPreview.viewTreeObserver.addOnGlobalLayoutListener { 
-                calculateExactImageBounds() 
+                calculateMatrixBounds() // חישוב חדש ומדויק
                 if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE) restoreLogoPosition() 
             }
             
@@ -97,35 +96,35 @@ class DetailsActivity : AppCompatActivity() {
     private fun loadSharpImage(path: String) { 
         b.ivPreview.load(File(path)) { 
             memoryCachePolicy(CachePolicy.DISABLED); diskCachePolicy(CachePolicy.DISABLED); crossfade(true)
-            listener(onSuccess = { _, _ -> b.ivPreview.post { calculateExactImageBounds() } }) 
+            listener(onSuccess = { _, _ -> b.ivPreview.post { calculateMatrixBounds() } }) 
         } 
     }
 
-    // --- חישוב גבולות מדויק לתמונת FIT_CENTER ---
-    // זה הלב של התיקון. זה מחשב בדיוק איפה הפיקסלים של התמונה נמצאים על המסך.
-    private fun calculateExactImageBounds() {
+    // --- חישוב מטריצה מדויק (The Matrix Fix) ---
+    // זה שואב את המיקום המדויק של התמונה מתוך ה-ImageView
+    private fun calculateMatrixBounds() {
         val imageView = b.ivPreview
         val drawable = imageView.drawable ?: return
         
-        val imageW = drawable.intrinsicWidth.toFloat()
-        val imageH = drawable.intrinsicHeight.toFloat()
-        val viewW = imageView.width.toFloat()
-        val viewH = imageView.height.toFloat()
+        val imageMatrix = imageView.imageMatrix
+        val values = FloatArray(9)
+        imageMatrix.getValues(values)
         
-        if (viewW == 0f || viewH == 0f) return
-
-        val scaleX = viewW / imageW
-        val scaleY = viewH / imageH
-        val scale = Math.min(scaleX, scaleY) // FIT_CENTER לוקח את המינימום
-
-        val finalW = imageW * scale
-        val finalH = imageH * scale
+        // שליפת המיקום והגודל האמיתיים של התמונה על המסך
+        val globalX = values[Matrix.MTRANS_X]
+        val globalY = values[Matrix.MTRANS_Y]
+        val scaleX = values[Matrix.MSCALE_X]
+        val scaleY = values[Matrix.MSCALE_Y]
         
-        // מרכוז
-        val left = (viewW - finalW) / 2
-        val top = (viewH - finalH) / 2
+        val origW = drawable.intrinsicWidth
+        val origH = drawable.intrinsicHeight
         
-        imageBounds.set(left, top, left + finalW, top + finalH)
+        val actualW = Math.round(origW * scaleX).toFloat()
+        val actualH = Math.round(origH * scaleY).toFloat()
+        
+        imageBounds.set(globalX, globalY, globalX + actualW, globalY + actualH)
+        
+        // עדכון גבולות הציור
         b.drawingView.setValidBounds(imageBounds)
     }
     
@@ -133,13 +132,13 @@ class DetailsActivity : AppCompatActivity() {
     private fun setupMediaToggle() { b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked -> val v = if (isChecked) android.view.View.GONE else android.view.View.VISIBLE; b.vDisabledOverlay.visibility = v; b.tvTextOnlyLabel.visibility = v; b.mediaToolsContainer.alpha = if (isChecked) 1.0f else 0.3f; enableMediaTools(isChecked) } }
     private fun enableMediaTools(enable: Boolean) { b.btnModeBlur.isEnabled = enable; b.btnModeLogo.isEnabled = enable; b.sbLogoSize.isEnabled = enable; if (!enable) { b.drawingView.visibility = android.view.View.GONE; b.ivDraggableLogo.visibility = android.view.View.GONE; b.drawingView.isBlurMode = false } }
     private fun setupTools() {
-        b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f; calculateExactImageBounds() }
+        b.btnModeBlur.setOnClickListener { b.drawingView.isBlurMode = true; b.drawingView.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f; calculateMatrixBounds() }
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false; b.ivDraggableLogo.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f
             val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE); val uriStr = prefs.getString("logo_uri", null)
             if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.clearColorFilter() } 
             else { b.ivDraggableLogo.load(android.R.drawable.ic_menu_gallery); b.ivDraggableLogo.setColorFilter(Color.WHITE) }
-            b.ivDraggableLogo.post { calculateExactImageBounds(); savedLogoRelX = 0.5f - ((b.ivDraggableLogo.width / 2f) / imageBounds.width()); savedLogoRelY = 0.5f - ((b.ivDraggableLogo.height / 2f) / imageBounds.height()); restoreLogoPosition() }
+            b.ivDraggableLogo.post { calculateMatrixBounds(); savedLogoRelX = 0.5f - ((b.ivDraggableLogo.width / 2f) / imageBounds.width()); savedLogoRelY = 0.5f - ((b.ivDraggableLogo.height / 2f) / imageBounds.height()); restoreLogoPosition() }
         }
         b.ivDraggableLogo.setOnTouchListener { view, event -> if (b.drawingView.isBlurMode) return@setOnTouchListener false; when (event.action) { android.view.MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }; android.view.MotionEvent.ACTION_MOVE -> { var newX = event.rawX + dX; var newY = event.rawY + dY; if (newX < imageBounds.left) newX = imageBounds.left; if (newX + view.width > imageBounds.right) newX = imageBounds.right - view.width; if (newY < imageBounds.top) newY = imageBounds.top; if (newY + view.height > imageBounds.bottom) newY = imageBounds.bottom - view.height; view.x = newX; view.y = newY; if (imageBounds.width() > 0) { savedLogoRelX = (newX - imageBounds.left) / imageBounds.width(); savedLogoRelY = (newY - imageBounds.top) / imageBounds.height() } } }; true }
         b.sbLogoSize.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener { override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) { val scale = 0.5f + (p / 50f); b.ivDraggableLogo.scaleX = scale; b.ivDraggableLogo.scaleY = scale; savedLogoScale = scale }; override fun onStartTrackingTouch(sb: SeekBar?) {}; override fun onStopTrackingTouch(sb: SeekBar?) {} })
@@ -156,7 +155,7 @@ class DetailsActivity : AppCompatActivity() {
         if (target.isEmpty()) { Toast.makeText(this, "Set Target!", Toast.LENGTH_SHORT).show(); return }
         val caption = b.etCaption.text.toString(); val includeMedia = b.swIncludeMedia.isChecked; val targetId = if (thumbId != 0) thumbId else fileId; val currentThumbPath = thumbPath
         
-        calculateExactImageBounds() // וודא חישוב לפני שמירה
+        calculateMatrixBounds() // חישוב מטריצה סופי
 
         val rectsSnapshot = ArrayList<BlurRect>()
         for (r in b.drawingView.rects) { rectsSnapshot.add(BlurRect(cleanFloat(r.left), cleanFloat(r.top), cleanFloat(r.right), cleanFloat(r.bottom))) }

@@ -37,8 +37,6 @@ object MediaProcessor {
         File(outputPath).delete()
         
         val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
-        
-        // תיקון סיומת אם צריך
         val finalOutputPath = if (!outputPath.endsWith(".mp4") && isVideo) "$outputPath.mp4" else outputPath
 
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
@@ -62,9 +60,8 @@ object MediaProcessor {
         args.add("-i"); args.add(safeInput.absolutePath)
         
         if (logoPath != null) {
-            // --- התיקון לוידאו 0 שניות ---
-            // אם זה וידאו, אנחנו מפעילים לולאה על הלוגו (-loop 1)
-            // זה גורם לתמונה להיות "וידאו אינסופי" במקום להיגמר אחרי פריים אחד
+            // --- התיקון הקריטי לוידאו 0 שניות ---
+            // חובה לשים -loop 1 לפני ה-Input של הלוגו!
             if (isVideo) {
                 args.add("-loop"); args.add("1")
             }
@@ -87,11 +84,14 @@ object MediaProcessor {
             if (filter.isNotEmpty()) filter.append(";")
             filter.append("$currentStream split=2[$splitName][$cropName];")
             
+            // חיתוך מדויק
             val cropCmd = "crop=iw*${fmt(wRel)}:ih*${fmt(hRel)}:iw*${fmt(xRel)}:ih*${fmt(yRel)}"
             
-            // טשטוש חזק יותר
-            filter.append("[$cropName]$cropCmd,scale=trunc(iw/10/2)*2:-2:flags=lanczos,scale=iw*10:ih*10:flags=neighbor[$blurName];")
+            // טשטוש חזק ואיכותי
+            filter.append("[$cropName]$cropCmd,scale=trunc(iw/15/2)*2:-2:flags=lanczos,scale=iw*15:ih*15:flags=neighbor[$blurName];")
             
+            // overlay עם shortest=1 (חשוב מאוד!)
+            // ה-1 אומר: תסיים כשהקובץ הכי קצר (הוידאו המקורי) נגמר
             filter.append("[$splitName][$blurName]overlay=x=main_w*${fmt(xRel)}:y=main_h*${fmt(yRel)}:shortest=1$nextStream")
             
             currentStream = nextStream
@@ -107,13 +107,10 @@ object MediaProcessor {
             val xCmd = "main_w*${fmt(lX)}"
             val yCmd = "main_h*${fmt(lY)}"
             
-            // shortest=1 אומר: תעצור כשהזרם הכי קצר (הוידאו המקורי) נגמר.
-            // בגלל שעשינו loop ללוגו, הוא אינסופי, אז הוידאו המקורי הוא הקובע.
             filter.append("$currentStream[logo]overlay=x=$xCmd:y=$yCmd:shortest=1[v_pre_final]")
             currentStream = "[v_pre_final]"
         }
 
-        // --- סיום ---
         if (filter.isNotEmpty()) filter.append(";")
         
         if (isVideo) {
@@ -128,23 +125,26 @@ object MediaProcessor {
         if (isVideo) {
             args.add("-map"); args.add("0:a?") 
             
-            // --- תיקון איכות (High Bitrate) ---
-            args.add("-r"); args.add("30") // FPS קבוע
+            // --- איכות וידאו קיצונית ---
+            args.add("-r"); args.add("30")
             args.add("-c:v"); args.add("mpeg4")
-            args.add("-b:v"); args.add("8M") // 8 מגה-ביט לשנייה = איכות גבוהה מאוד
-            args.add("-maxrate"); args.add("10M")
-            args.add("-bufsize"); args.add("15M")
+            args.add("-b:v"); args.add("15M") // 15 מגה-ביט! איכות מטורפת
+            args.add("-maxrate"); args.add("20M")
+            args.add("-bufsize"); args.add("30M")
             args.add("-pix_fmt"); args.add("yuv420p")
             
             args.add("-c:a"); args.add("aac")
-            args.add("-b:a"); args.add("192k") // אודיו איכותי
+            args.add("-b:a"); args.add("256k")
             args.add("-ac"); args.add("2")
         } else {
+            // --- איכות תמונה ---
             args.add("-c:v"); args.add("png")
+            // דחיסה נמוכה יותר כדי לשמור על פרטים
+            args.add("-compression_level"); args.add("3")
         }
         args.add(finalOutputPath)
 
-        showToast(context, "🎬 High-Quality Processing...")
+        showToast(context, "🎬 High-Res Rendering...")
 
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
@@ -152,8 +152,8 @@ object MediaProcessor {
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
-                val errorMsg = if (logs.length > 400) logs.takeLast(400) else logs
-                showToast(context, "❌ Error: $errorMsg")
+                val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
+                showToast(context, "❌ Render Fail: $errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
