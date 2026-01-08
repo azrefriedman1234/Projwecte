@@ -58,8 +58,7 @@ object MediaProcessor {
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
         catch (e: Exception) { showToast(context, "Copy Failed"); onComplete(false); return }
 
-        // מקרה קצה: אין עריכה - עדיין נעביר דרך FFmpeg כדי לחדד (Sharpen) אם זה תמונה
-        // או נעתיק אם אין צורך. לבינתיים נעתיק כדי לחסוך זמן.
+        // מקרה קצה: אין עריכה
         if (rects.isEmpty() && logoUri == null) {
             try { 
                 safeInput.copyTo(File(finalOutputPath), overwrite = true)
@@ -94,7 +93,7 @@ object MediaProcessor {
         val filter = StringBuilder()
         var currentStream = "[0:v]"
         
-        // שלב 1: טשטוש (עם אלגוריתם lanczos לאיכות גבוהה יותר בהקטנה)
+        // שלב הטשטוש
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
@@ -107,11 +106,7 @@ object MediaProcessor {
             if (pixelX + pixelW > width) pixelW = width - pixelX
             if (pixelY + pixelH > height) pixelH = height - pixelY
             
-            if (pixelW % 2 != 0) pixelW--
-            if (pixelH % 2 != 0) pixelH--
-            if (pixelX % 2 != 0) pixelX--
-            if (pixelY % 2 != 0) pixelY--
-            
+            // הגנה בסיסית
             if (pixelW < 4) pixelW = 4
             if (pixelH < 4) pixelH = 4
 
@@ -120,40 +115,35 @@ object MediaProcessor {
             val xStr = pixelX.toString()
             val yStr = pixelY.toString()
             
-            // שימוש ב-lanczos במקום bicubic לחדות טובה יותר בטשטוש
+            // טשטוש עם הגנת זוגיות פנימית
             filter.append("$currentStream split=2[$splitName][$cropName];")
             filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/5/2)*2:-2:flags=lanczos,scale=$wStr:$hStr:flags=lanczos[$blurName];")
             filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream;")
             currentStream = nextStream
         }
 
-        // שלב 2: הוספת לוגו
+        // שלב הלוגו
         if (logoPath != null) {
             var targetLogoW = (width * lRelWidth).toInt()
             if (targetLogoW % 2 != 0) targetLogoW--
             if (targetLogoW < 4) targetLogoW = 4
 
-            // חישוב המיקום המדויק
             val finalX = (width * lX).toInt()
             val finalY = (height * lY).toInt()
 
             filter.append("[1:v]scale=$targetLogoW:-1:flags=lanczos[logo];")
-            filter.append("$currentStream[logo]overlay=x=$finalX:y=$finalY[v_pre_sharp]")
-            currentStream = "[v_pre_sharp]"
-        } else {
-             // רק שינוי שם לזרם כדי להמשיך לחידוד
-             filter.append("${currentStream}null[v_pre_sharp]")
-             currentStream = "[v_pre_sharp]"
+            filter.append("$currentStream[logo]overlay=x=$finalX:y=$finalY[v_pre_final]")
+            currentStream = "[v_pre_final]"
         }
 
-        // שלב 3: חידוד סופי (Unsharp Mask) - רק לתמונות!
-        // זה מה שייתן את ה"חדות" שחסרה לך
-        if (!isVideo) {
-            // unsharp=5:5:1.0:5:5:0.0 -> מטריצה 5x5, עוצמה 1.0 (חזק וטוב)
-            filter.append(";${currentStream}unsharp=5:5:1.0:5:5:0.0[v_done]")
+        // שלב סופי קריטי: הגנת זוגיות גלובלית
+        // זה מה שיפתור את הבעיה של 500x500 ודומיו
+        // אנחנו מכריחים את הוידאו הסופי להיות זוגי ברוחב ובגובה
+        if (isVideo) {
+            filter.append(";${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
         } else {
-            // בוידאו חידוד יכול לגרום לרעש, אז נשאיר נקי
-            filter.append(";${currentStream}null[v_done]")
+            // לתמונות נוסיף חידוד
+            filter.append(";${currentStream}unsharp=5:5:1.0:5:5:0.0[v_done]")
         }
 
         args.add("-filter_complex"); args.add(filter.toString())
@@ -161,14 +151,17 @@ object MediaProcessor {
         
         if (isVideo) {
             args.add("-c:v"); args.add("libx264")
-            args.add("-preset"); args.add("ultrafast")
-            args.add("-crf"); args.add("18") // איכות 18 = כמעט Lossless לוידאו
+            args.add("-preset"); args.add("superfast") // קצת פחות עומס על המעבד
+            args.add("-profile:v"); args.add("baseline") // תאימות מקסימלית
+            args.add("-level"); args.add("3.0")
+            args.add("-crf"); args.add("20")
             args.add("-pix_fmt"); args.add("yuv420p")
-            args.add("-c:a"); args.add("copy")
+            
+            // שינוי קריטי: קידוד אודיו מחדש (מונע התנגשויות העתקה)
+            args.add("-c:a"); args.add("aac")
+            args.add("-b:a"); args.add("128k")
+            args.add("-ac"); args.add("2")
         } else {
-            // חזרנו ל-JPG אבל באיכות מקסימלית (1).
-            // הניסיון עם PNG הראה שהוא כבד מדי ולא בהכרח עוזר בטלגרם.
-            // JPG באיכות 1 + פילטר חידוד ייראה הרבה יותר טוב.
             args.add("-q:v"); args.add("1")
         }
         args.add(finalOutputPath)
@@ -179,8 +172,8 @@ object MediaProcessor {
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
-                val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
-                showToast(context, "❌ Edit Error: $errorMsg")
+                val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
+                showToast(context, "❌ Fix Failed!\n$errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
