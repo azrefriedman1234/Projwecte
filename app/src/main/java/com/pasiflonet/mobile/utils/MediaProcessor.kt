@@ -10,6 +10,7 @@ import com.arthenica.ffmpegkit.ReturnCode
 import java.io.File
 import java.io.FileOutputStream
 
+// FORCE UPDATE: Safe Mode 720p + AAC
 object MediaProcessor {
 
     fun processContent(
@@ -24,13 +25,13 @@ object MediaProcessor {
         logoRelW: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        // אם זה לא וידאו - מעבירים ל-ImageUtils (שכבר טיפלנו בו)
+        // אם זה לא וידאו - מעבירים ל-ImageUtils
         if (!isVideo) {
-            onComplete(false) // מחזיר שקר כדי שהפעילות תדע להשתמש ב-ImageUtils
+            onComplete(false)
             return
         }
 
-        Log.d("MediaProcessor", "Processing Video in Safe Mode")
+        Log.d("MediaProcessor", "Processing Video in Safe Mode (720p)")
 
         // הכנת לוגו
         var logoPath: String? = null
@@ -88,7 +89,6 @@ object MediaProcessor {
                     onComplete(true)
                 } else {
                     Log.e("FFmpeg", "Failed: ${session.failStackTrace}")
-                    // Fallback מיידי - מעתיקים את המקור ומדווחים הצלחה כדי לא לקרוס
                     fallbackCopy(inputPath, outputPath, onComplete)
                 }
             }
