@@ -80,9 +80,30 @@ class DetailsActivity : AppCompatActivity() {
     private fun saveDraft() { try { getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().putString("draft_caption", b.etCaption.text.toString()).putString("draft_path", thumbPath).putBoolean("draft_is_video", isVideo).putInt("draft_file_id", fileId).apply() } catch (e: Exception) {} }
     private fun restoreDraft(): Boolean { val prefs = getSharedPreferences("draft_prefs", MODE_PRIVATE); val path = prefs.getString("draft_path", null); if (path != null || prefs.getString("draft_caption", "")!!.isNotEmpty()) { thumbPath = path; isVideo = prefs.getBoolean("draft_is_video", false); fileId = prefs.getInt("draft_file_id", 0); b.etCaption.setText(prefs.getString("draft_caption", "")); if (path != null) loadSharpImage(path); return true }; return false }
     private fun clearDraft() { getSharedPreferences("draft_prefs", MODE_PRIVATE).edit().clear().apply() }
-    private fun safeToast(msg: String) { runOnUiThread { if (!isFinishing && !isDestroyed) Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() } }
     
-    private fun startHDImageHunter(targetId: Int) { TdLibManager.downloadFile(targetId); lifecycleScope.launch(Dispatchers.IO) { for (i in 0..20) { val realPath = TdLibManager.getFilePath(targetId); if (realPath != null && File(realPath).exists() && File(realPath).length() > 1000) { withContext(Dispatchers.Main) { if(!isFinishing) { thumbPath = realPath; loadSharpImage(realPath); saveDraft() } }; break }; delay(500) } } }
+    // מנגנון הודעות בטוח שלא קורס
+    private fun safeToast(msg: String) { 
+        runOnUiThread { 
+            if (!isFinishing && !isDestroyed) {
+                Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() 
+            }
+        } 
+    }
+    
+    private fun startHDImageHunter(targetId: Int) { 
+        TdLibManager.downloadFile(targetId)
+        lifecycleScope.launch(Dispatchers.IO) { 
+            for (i in 0..20) { 
+                val realPath = TdLibManager.getFilePath(targetId)
+                if (realPath != null && File(realPath).exists() && File(realPath).length() > 1000) { 
+                    withContext(Dispatchers.Main) { 
+                        if(!isFinishing) { thumbPath = realPath; loadSharpImage(realPath); saveDraft() } 
+                    }
+                    break 
+                }; delay(500) 
+            } 
+        } 
+    }
     private fun loadSharpImage(path: String) { b.ivPreview.load(File(path)) { memoryCachePolicy(CachePolicy.DISABLED); diskCachePolicy(CachePolicy.DISABLED); crossfade(true); listener(onSuccess = { _, _ -> b.ivPreview.post { calculateMatrixBounds() } }) } }
 
     private fun setupTools() {
@@ -125,6 +146,7 @@ class DetailsActivity : AppCompatActivity() {
                 val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
                 val relW = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
 
+                // כאן הקסם: שימוש ב-MediaProcessor המעודכן לוידאו וב-ImageUtils לתמונות
                 val success = if (isVideo) {
                     var vidResult = false
                     val lock = Object()
@@ -137,8 +159,18 @@ class DetailsActivity : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     if (isFinishing || isDestroyed) return@withContext
-                    if (success) { safeToast("Sending..."); GlobalScope.launch(Dispatchers.IO) { TdLibManager.sendFinalMessage(target, caption, outPath, isVideo) }; clearDraft(); finish() } 
-                    else { safeToast("Edit failed, sending original..."); GlobalScope.launch(Dispatchers.IO) { TdLibManager.sendFinalMessage(target, caption, finalPath, isVideo) }; clearDraft(); finish() }
+                    
+                    if (success) { 
+                        safeToast("Sending..."); 
+                        GlobalScope.launch(Dispatchers.IO) { TdLibManager.sendFinalMessage(target, caption, outPath, isVideo) }
+                        clearDraft()
+                        finish() 
+                    } else { 
+                        safeToast("Edit failed, sending original...")
+                        GlobalScope.launch(Dispatchers.IO) { TdLibManager.sendFinalMessage(target, caption, finalPath, isVideo) }
+                        clearDraft()
+                        finish() 
+                    }
                 }
             } catch (e: Exception) { withContext(Dispatchers.Main) { safeToast("Error: ${e.message}"); if (!isFinishing) { b.loadingOverlay.visibility = android.view.View.GONE; b.btnSend.isEnabled = true } } }
         }
