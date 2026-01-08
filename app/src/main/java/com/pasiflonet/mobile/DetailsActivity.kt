@@ -1,5 +1,6 @@
 package com.pasiflonet.mobile
 
+import android.graphics.Color
 import android.graphics.RectF
 import android.net.Uri
 import android.os.Bundle
@@ -59,10 +60,8 @@ class DetailsActivity : AppCompatActivity() {
             if (targetId != 0) startImageHunter(targetId)
             else if (thumbPath != null) loadSharpImage(thumbPath!!)
             
-            // עדכון גבולות כשהמסך משתנה (למשל כשמקלדת נפתחת/נסגרת)
             b.ivPreview.viewTreeObserver.addOnGlobalLayoutListener {
                 updateImageBounds()
-                // שחזור מיקום הלוגו לפי האחוזים השמורים
                 if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE) {
                     restoreLogoPosition()
                 }
@@ -76,7 +75,6 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun updateImageBounds() {
         imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
-        // Fallback למקרה של כישלון
         if (imageBounds.width() <= 0 && b.ivPreview.width > 0) {
             imageBounds.set(0f, 0f, b.ivPreview.width.toFloat(), b.ivPreview.height.toFloat())
         }
@@ -151,7 +149,6 @@ class DetailsActivity : AppCompatActivity() {
             
             b.ivDraggableLogo.post {
                 updateImageBounds()
-                // איפוס לאמצע
                 savedLogoRelX = 0.5f - ((b.ivDraggableLogo.width / 2f) / imageBounds.width())
                 savedLogoRelY = 0.5f - ((b.ivDraggableLogo.height / 2f) / imageBounds.height())
                 restoreLogoPosition()
@@ -166,7 +163,7 @@ class DetailsActivity : AppCompatActivity() {
                 MotionEvent.ACTION_MOVE -> {
                     var newX = event.rawX + dX
                     var newY = event.rawY + dY
-                    // גבולות
+                    
                     if (newX < imageBounds.left) newX = imageBounds.left
                     if (newX + view.width > imageBounds.right) newX = imageBounds.right - view.width
                     if (newY < imageBounds.top) newY = imageBounds.top
@@ -175,7 +172,6 @@ class DetailsActivity : AppCompatActivity() {
                     view.x = newX
                     view.y = newY
                     
-                    // שמירת מיקום יחסי בזמן אמת!
                     if (imageBounds.width() > 0) {
                         savedLogoRelX = (newX - imageBounds.left) / imageBounds.width()
                         savedLogoRelY = (newY - imageBounds.top) / imageBounds.height()
@@ -214,16 +210,10 @@ class DetailsActivity : AppCompatActivity() {
             Toast.makeText(this, "Media not ready!", Toast.LENGTH_SHORT).show(); return 
         }
 
-        // --- שימוש בנתונים השמורים (Safe Mode) ---
-        // אנחנו לא מחשבים מחדש לפי ה-View כי הוא אולי זז.
-        // אנחנו משתמשים ב-savedLogoRelX/Y וברשימת הריבועים היחסית של DrawingView.
-        
-        // חישוב רוחב לוגו יחסי
-        // שים לב: אנחנו מניחים שהיחס בין גודל הלוגו לגודל התמונה נשמר
-        updateImageBounds() // רק כדי לוודא שאין 0
+        updateImageBounds()
         val relativeWidth = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
         
-        val rects = b.drawingView.rects // כבר באחוזים!
+        val rects = b.drawingView.rects
         val logoUriStr = prefs.getString("logo_uri", null)
         val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
 
@@ -241,8 +231,8 @@ class DetailsActivity : AppCompatActivity() {
                     isVideo = isVideo,
                     rects = rects,
                     logoUri = logoUri,
-                    lX = savedLogoRelX, // שימוש במיקום השמור
-                    lY = savedLogoRelY, // שימוש במיקום השמור
+                    lX = savedLogoRelX,
+                    lY = savedLogoRelY,
                     lRelWidth = relativeWidth,
                     onComplete = { success ->
                         if (success) {
