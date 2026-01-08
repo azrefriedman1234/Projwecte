@@ -56,9 +56,16 @@ class DetailsActivity : AppCompatActivity() {
 
             if (miniThumb != null) b.ivPreview.load(miniThumb)
 
+            // התחלת הורדה ברקע מיד בפתיחה
             val targetId = if (thumbId != 0) thumbId else fileId
             if (targetId != 0) startImageHunter(targetId)
             else if (thumbPath != null) loadSharpImage(thumbPath!!)
+            
+            // אם אין מדיה בכלל (הודעת טקסט), נבטל את מתג המדיה אוטומטית
+            if (targetId == 0 && thumbPath.isNullOrEmpty()) {
+                b.swIncludeMedia.isChecked = false
+                b.swIncludeMedia.isEnabled = false
+            }
             
             b.ivPreview.viewTreeObserver.addOnGlobalLayoutListener {
                 updateImageBounds()
@@ -88,17 +95,22 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun startImageHunter(fileIdToHunt: Int) {
         lifecycleScope.launch(Dispatchers.IO) {
-            var attempts = 0
-            while (attempts < 120) {
-                TdLibManager.downloadFile(fileIdToHunt)
-                val realPath = TdLibManager.getFilePath(fileIdToHunt)
-                if (realPath != null && File(realPath).exists() && File(realPath).length() > 0) {
-                    withContext(Dispatchers.Main) { thumbPath = realPath; loadSharpImage(realPath) }
-                    break
-                }
-                delay(500); attempts++
-            }
+            // ניסיון ראשוני שקט
+            TdLibManager.downloadFile(fileIdToHunt)
+            checkAndLoad(fileIdToHunt)
         }
+    }
+    
+    private suspend fun checkAndLoad(id: Int): Boolean {
+        val realPath = TdLibManager.getFilePath(id)
+        if (realPath != null && File(realPath).exists() && File(realPath).length() > 0) {
+            withContext(Dispatchers.Main) { 
+                thumbPath = realPath
+                loadSharpImage(realPath) 
+            }
+            return true
+        }
+        return false
     }
 
     private fun loadSharpImage(path: String) {
@@ -162,65 +174,107 @@ class DetailsActivity : AppCompatActivity() {
         b.btnCancel.setOnClickListener { finish() }
     }
 
-    private fun sendData() {
-        val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
-        val target = prefs.getString("target_username", "") ?: ""
-        if (target.isEmpty()) { Toast.makeText(this, "Set Target!", Toast.LENGTH_SHORT).show(); return }
-        
-        val caption = b.etCaption.text.toString()
-        val includeMedia = b.swIncludeMedia.isChecked
-        val finalPath = thumbPath
-        
-        if (includeMedia && (finalPath == null || !File(finalPath).exists())) { Toast.makeText(this, "Media not ready!", Toast.LENGTH_SHORT).show(); return }
+    // --- המנגנון החדש: המתנה להורדה ---
+    private suspend fun waitForMedia(targetId: Int): String? {
+        // בדיקה מהירה אם כבר יש לנו נתיב
+        if (!thumbPath.isNullOrEmpty() && File(thumbPath!!).exists()) return thumbPath
 
-        updateImageBounds()
-        val relativeWidth = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
-        val rects = b.drawingView.rects
+        // אם אין ID, אין מה לחפש
+        if (targetId == 0) return null
+
+        // לולאת המתנה של 15 שניות
+        withContext(Dispatchers.Main) { Toast.makeText(this@DetailsActivity, "Downloading HD Media...", Toast.LENGTH_LONG).show() }
         
-        var logoUriStr = prefs.getString("logo_uri", null)
-        var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
+        TdLibManager.downloadFile(targetId) // דחיפה נוספת להורדה
         
-        // --- לכידה בטוחה של הלוגו אם הוא מוצג ---
-        if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE && logoUri == null) {
-            try {
-                // המרה אגרסיבית של ה-View לקובץ, כדי שלא נפספס
-                b.ivDraggableLogo.isDrawingCacheEnabled = true
-                val bitmap = Bitmap.createBitmap(b.ivDraggableLogo.drawingCache)
-                b.ivDraggableLogo.isDrawingCacheEnabled = false
-                
-                val file = File(cacheDir, "captured_logo.png")
-                val out = FileOutputStream(file)
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-                out.flush(); out.close()
-                logoUri = Uri.fromFile(file)
-            } catch (e: Exception) { e.printStackTrace() }
+        for (i in 1..30) { // 30 חצאי שניות = 15 שניות
+            if (checkAndLoad(targetId)) return thumbPath
+            delay(500)
         }
+        return null
+    }
 
-        GlobalScope.launch(Dispatchers.IO) {
-            if (!includeMedia) {
-                TdLibManager.sendFinalMessage(target, caption, null, false)
-            } else {
-                // לתמונות: PNG בלבד (ללא איבוד איכות)
-                val extension = if(isVideo) "mp4" else "png"
-                val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
+    private fun sendData() {
+        // השתקת הכפתור כדי למנוע לחיצות כפולות
+        b.btnSend.isEnabled = false
+        b.btnSend.text = "Wait..."
 
-                MediaProcessor.processContent(
-                    context = applicationContext,
-                    inputPath = finalPath!!,
-                    outputPath = outputPath,
-                    isVideo = isVideo,
-                    rects = rects,
-                    logoUri = logoUri,
-                    lX = savedLogoRelX,
-                    lY = savedLogoRelY,
-                    lRelWidth = relativeWidth,
-                    onComplete = { success ->
-                        if (success) TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
-                    }
-                )
+        lifecycleScope.launch {
+            val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
+            val target = prefs.getString("target_username", "") ?: ""
+            if (target.isEmpty()) { 
+                Toast.makeText(this@DetailsActivity, "Set Target!", Toast.LENGTH_SHORT).show()
+                b.btnSend.isEnabled = true; b.btnSend.text = "SEND"
+                return@launch 
+            }
+            
+            val caption = b.etCaption.text.toString()
+            val includeMedia = b.swIncludeMedia.isChecked
+            
+            // --- שלב ההמתנה ---
+            var finalPath = thumbPath
+            if (includeMedia) {
+                val targetId = if (thumbId != 0) thumbId else fileId
+                // אם הקובץ לא מוכן, נחכה לו עכשיו
+                finalPath = waitForMedia(targetId)
+                
+                if (finalPath == null || !File(finalPath).exists()) {
+                    Toast.makeText(this@DetailsActivity, "Media Download Failed (Timeout)", Toast.LENGTH_LONG).show()
+                    b.btnSend.isEnabled = true; b.btnSend.text = "SEND"
+                    return@launch
+                }
+            }
+
+            // חישובים לעריכה
+            updateImageBounds()
+            val relativeWidth = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
+            val rects = b.drawingView.rects
+            
+            var logoUriStr = prefs.getString("logo_uri", null)
+            var logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
+            
+            if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE && logoUri == null) {
+                try {
+                    b.ivDraggableLogo.isDrawingCacheEnabled = true
+                    val bitmap = Bitmap.createBitmap(b.ivDraggableLogo.drawingCache)
+                    b.ivDraggableLogo.isDrawingCacheEnabled = false
+                    val file = File(cacheDir, "captured_logo.png")
+                    val out = FileOutputStream(file)
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    out.flush(); out.close()
+                    logoUri = Uri.fromFile(file)
+                } catch (e: Exception) { e.printStackTrace() }
+            }
+
+            // שגור
+            GlobalScope.launch(Dispatchers.IO) {
+                if (!includeMedia) {
+                    TdLibManager.sendFinalMessage(target, caption, null, false)
+                } else {
+                    val extension = if(isVideo) "mp4" else "png" // PNG לתמונות!
+                    val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
+
+                    MediaProcessor.processContent(
+                        context = applicationContext,
+                        inputPath = finalPath!!,
+                        outputPath = outputPath,
+                        isVideo = isVideo,
+                        rects = rects,
+                        logoUri = logoUri,
+                        lX = savedLogoRelX,
+                        lY = savedLogoRelY,
+                        lRelWidth = relativeWidth,
+                        onComplete = { success ->
+                            if (success) TdLibManager.sendFinalMessage(target, caption, outputPath, isVideo)
+                        }
+                    )
+                }
+            }
+            
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@DetailsActivity, "Processing & Sending...", Toast.LENGTH_SHORT).show()
+                finish()
             }
         }
-        Toast.makeText(this, "Sending...", Toast.LENGTH_SHORT).show()
-        finish()
     }
 }
