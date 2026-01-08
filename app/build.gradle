@@ -15,7 +15,6 @@ android {
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         
-        // הגדרה קריטית ל-FFmpeg כדי למנוע התנגשויות ב-Native
         packagingOptions {
             pickFirst 'lib/x86/libc++_shared.so'
             pickFirst 'lib/x86_64/libc++_shared.so'
@@ -45,14 +44,14 @@ android {
 dependencies {
     implementation 'androidx.core:core-ktx:1.9.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
-    implementation 'com.google.android.material:material:1.9.0' // חובה לעיצוב החדש
+    implementation 'com.google.android.material:material:1.9.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.cardview:cardview:1.0.0' // חובה לכרטיסיות
+    implementation 'androidx.cardview:cardview:1.0.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
     implementation("io.coil-kt:coil:2.4.0")
     
-    // הגרסה החדשה והמלאה (GPL) שכוללת את x264
-    implementation 'com.arthenica:ffmpeg-kit-full-gpl:6.0'
+    // --- התיקון: טעינה מקומית של הקובץ שהורדנו ---
+    implementation files('libs/ffmpeg-kit-full-gpl-6.0.aar')
     
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
