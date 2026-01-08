@@ -31,7 +31,6 @@ class DetailsActivity : AppCompatActivity() {
     private var isVideo = false
     private var fileId = 0
     private var thumbId = 0
-    
     private var imageBounds = RectF()
     private var dX = 0f
     private var dY = 0f
@@ -137,19 +136,14 @@ class DetailsActivity : AppCompatActivity() {
             if (b.drawingView.isBlurMode) return@setOnTouchListener false
             
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    dX = view.x - event.rawX
-                    dY = view.y - event.rawY
-                }
+                MotionEvent.ACTION_DOWN -> { dX = view.x - event.rawX; dY = view.y - event.rawY }
                 MotionEvent.ACTION_MOVE -> {
                     var newX = event.rawX + dX
                     var newY = event.rawY + dY
-                    
                     if (newX < imageBounds.left) newX = imageBounds.left
                     if (newX + view.width > imageBounds.right) newX = imageBounds.right - view.width
                     if (newY < imageBounds.top) newY = imageBounds.top
                     if (newY + view.height > imageBounds.bottom) newY = imageBounds.bottom - view.height
-                    
                     view.animate().x(newX).y(newY).setDuration(0).start()
                 }
             }
@@ -172,17 +166,14 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun sendData() {
-        // איסוף כל הנתונים לפני הסגירה
         val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
         val target = prefs.getString("target_username", "") ?: ""
         if (target.isEmpty()) { Toast.makeText(this, "Set Target!", Toast.LENGTH_SHORT).show(); return }
         
         val caption = b.etCaption.text.toString()
         val includeMedia = b.swIncludeMedia.isChecked
-        val logoUriStr = prefs.getString("logo_uri", null)
-        val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
-        
         val finalPath = thumbPath
+        
         if (includeMedia && (finalPath == null || !File(finalPath).exists())) { 
             Toast.makeText(this, "Media not ready!", Toast.LENGTH_SHORT).show(); return 
         }
@@ -194,20 +185,20 @@ class DetailsActivity : AppCompatActivity() {
         val relY = logoY / imageBounds.height()
         val relativeWidth = (b.ivDraggableLogo.width * b.ivDraggableLogo.scaleX) / imageBounds.width()
         val rects = b.drawingView.getRectsRelative(imageBounds)
+        val logoUriStr = prefs.getString("logo_uri", null)
+        val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
 
-        // אפקט "שגר ושכח":
-        // אנחנו משתמשים ב-GlobalScope (או סקופ שלא קשור לאקטיביטי)
-        // כדי שהתהליך ימשיך גם אחרי שהמסך נסגר.
-        // (בדרך כלל לא מומלץ, אבל כאן זה בדיוק מה שאתה רוצה - שהאפליקציה "תסתדר לבד")
+        // Fire & Forget: שולחים ברקע וסוגרים את המסך
         GlobalScope.launch(Dispatchers.IO) {
             if (!includeMedia) {
                 TdLibManager.sendFinalMessage(target, caption, null, false)
             } else {
-                val extension = if(isVideo) "mp4" else "png"
+                // שינינו ל-JPG כי זה עובד טוב יותר עם פילטר החידוד וטלגרם
+                val extension = if(isVideo) "mp4" else "jpg"
                 val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
                 MediaProcessor.processContent(
-                    context = applicationContext, // חשוב: שימוש בקונטקסט של האפליקציה ולא של המסך שנסגר
+                    context = applicationContext,
                     inputPath = finalPath!!,
                     outputPath = outputPath,
                     isVideo = isVideo,
@@ -223,9 +214,8 @@ class DetailsActivity : AppCompatActivity() {
                 )
             }
         }
-
-        // סגירה מיידית של המסך! המשתמש חוזר לטבלה מיד.
-        Toast.makeText(this, "Sending in background...", Toast.LENGTH_SHORT).show()
+        
+        Toast.makeText(this, "Sending...", Toast.LENGTH_SHORT).show()
         finish()
     }
 }
