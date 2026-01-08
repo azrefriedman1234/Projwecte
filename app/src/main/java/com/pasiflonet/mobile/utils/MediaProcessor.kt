@@ -93,7 +93,7 @@ object MediaProcessor {
         val filter = StringBuilder()
         var currentStream = "[0:v]"
         
-        // שלב הטשטוש
+        // --- שלב הטשטוש ---
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
@@ -106,7 +106,6 @@ object MediaProcessor {
             if (pixelX + pixelW > width) pixelW = width - pixelX
             if (pixelY + pixelH > height) pixelH = height - pixelY
             
-            // הגנה בסיסית
             if (pixelW < 4) pixelW = 4
             if (pixelH < 4) pixelH = 4
 
@@ -115,14 +114,16 @@ object MediaProcessor {
             val xStr = pixelX.toString()
             val yStr = pixelY.toString()
             
-            // טשטוש עם הגנת זוגיות פנימית
+            // במידה וכבר יש פקודות קודמות, נוסיף נקודה-פסיק מפרידה
+            if (filter.isNotEmpty()) filter.append(";")
+            
             filter.append("$currentStream split=2[$splitName][$cropName];")
             filter.append("[$cropName]crop=$wStr:$hStr:$xStr:$yStr,scale=trunc(iw/5/2)*2:-2:flags=lanczos,scale=$wStr:$hStr:flags=lanczos[$blurName];")
-            filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream;")
+            filter.append("[$splitName][$blurName]overlay=$xStr:$yStr$nextStream") // שימו לב: אין נקודה פסיק בסוף כאן
             currentStream = nextStream
         }
 
-        // שלב הלוגו
+        // --- שלב הלוגו ---
         if (logoPath != null) {
             var targetLogoW = (width * lRelWidth).toInt()
             if (targetLogoW % 2 != 0) targetLogoW--
@@ -131,19 +132,22 @@ object MediaProcessor {
             val finalX = (width * lX).toInt()
             val finalY = (height * lY).toInt()
 
+            if (filter.isNotEmpty()) filter.append(";")
+            
             filter.append("[1:v]scale=$targetLogoW:-1:flags=lanczos[logo];")
             filter.append("$currentStream[logo]overlay=x=$finalX:y=$finalY[v_pre_final]")
             currentStream = "[v_pre_final]"
         }
 
-        // שלב סופי קריטי: הגנת זוגיות גלובלית
-        // זה מה שיפתור את הבעיה של 500x500 ודומיו
-        // אנחנו מכריחים את הוידאו הסופי להיות זוגי ברוחב ובגובה
+        // --- שלב סופי (הגנה וחידוד) ---
+        if (filter.isNotEmpty()) filter.append(";")
+        
         if (isVideo) {
-            filter.append(";${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
+            // הגנה לוידאו: חובה מימדים זוגיים
+            filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
         } else {
-            // לתמונות נוסיף חידוד
-            filter.append(";${currentStream}unsharp=5:5:1.0:5:5:0.0[v_done]")
+            // חידוד לתמונות
+            filter.append("${currentStream}unsharp=5:5:1.0:5:5:0.0[v_done]")
         }
 
         args.add("-filter_complex"); args.add(filter.toString())
@@ -151,13 +155,13 @@ object MediaProcessor {
         
         if (isVideo) {
             args.add("-c:v"); args.add("libx264")
-            args.add("-preset"); args.add("superfast") // קצת פחות עומס על המעבד
-            args.add("-profile:v"); args.add("baseline") // תאימות מקסימלית
-            args.add("-level"); args.add("3.0")
-            args.add("-crf"); args.add("20")
-            args.add("-pix_fmt"); args.add("yuv420p")
+            args.add("-preset"); args.add("superfast") // מהיר ויציב
+            args.add("-crf"); args.add("23") // איכות סטנדרטית טובה
+            args.add("-pix_fmt"); args.add("yuv420p") // חובה לאנדרואיד
             
-            // שינוי קריטי: קידוד אודיו מחדש (מונע התנגשויות העתקה)
+            // הסרנו את הפרופיל וה-Level שגרמו לשגיאה עם 500x500
+            
+            // קידוד אודיו מחדש
             args.add("-c:a"); args.add("aac")
             args.add("-b:a"); args.add("128k")
             args.add("-ac"); args.add("2")
@@ -172,8 +176,8 @@ object MediaProcessor {
                 onComplete(true)
             } else {
                 val logs = session.allLogsAsString
-                val errorMsg = if (logs.length > 300) logs.takeLast(300) else logs
-                showToast(context, "❌ Fix Failed!\n$errorMsg")
+                val errorMsg = if (logs.length > 200) logs.takeLast(200) else logs
+                showToast(context, "❌ Encoder Error: $errorMsg")
                 Log.e("FFMPEG_FAIL", logs)
                 onComplete(false)
             }
