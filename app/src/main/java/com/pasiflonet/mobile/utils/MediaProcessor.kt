@@ -20,7 +20,6 @@ object MediaProcessor {
         }
     }
 
-    // דיוק גבוה יותר (6 ספרות) למיקום 1:1
     private fun fmt(f: Float): String {
         return String.format(Locale.US, "%.6f", f)
     }
@@ -35,10 +34,11 @@ object MediaProcessor {
         lX: Float, lY: Float, lRelWidth: Float,
         onComplete: (Boolean) -> Unit
     ) {
-        // ניקוי קבצים ישנים למניעת התנגשויות
         File(outputPath).delete()
         
         val safeInput = File(context.cacheDir, "input_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}")
+        
+        // תיקון סיומת אם צריך
         val finalOutputPath = if (!outputPath.endsWith(".mp4") && isVideo) "$outputPath.mp4" else outputPath
 
         try { File(inputPath).copyTo(safeInput, overwrite = true) } 
@@ -62,42 +62,42 @@ object MediaProcessor {
         args.add("-i"); args.add(safeInput.absolutePath)
         
         if (logoPath != null) {
+            // --- התיקון לוידאו 0 שניות ---
+            // אם זה וידאו, אנחנו מפעילים לולאה על הלוגו (-loop 1)
+            // זה גורם לתמונה להיות "וידאו אינסופי" במקום להיגמר אחרי פריים אחד
+            if (isVideo) {
+                args.add("-loop"); args.add("1")
+            }
             args.add("-i"); args.add(logoPath)
         }
 
         val filter = StringBuilder()
         var currentStream = "[0:v]"
         
-        // --- שלב הטשטוש ---
+        // --- טשטוש ---
         rects.forEachIndexed { i, r ->
             val nextStream = "[v$i]"
             val splitName = "split_$i"; val cropName = "crop_$i"; val blurName = "blur_$i"
             
-            // חישובים בסיסיים
             val wRel = r.right - r.left
             val hRel = r.bottom - r.top
             val xRel = r.left
             val yRel = r.top
             
-            // הגנה מפני חריגות (FFmpeg קורס אם עוברים את ה-1.0)
-            // אבל אנחנו שומרים על דיוק
-            
             if (filter.isNotEmpty()) filter.append(";")
             filter.append("$currentStream split=2[$splitName][$cropName];")
             
-            // חיתוך מדויק
             val cropCmd = "crop=iw*${fmt(wRel)}:ih*${fmt(hRel)}:iw*${fmt(xRel)}:ih*${fmt(yRel)}"
             
-            // שרשרת הטשטוש
-            filter.append("[$cropName]$cropCmd,scale=trunc(iw/8/2)*2:-2:flags=lanczos,scale=iw*8:ih*8:flags=neighbor[$blurName];")
+            // טשטוש חזק יותר
+            filter.append("[$cropName]$cropCmd,scale=trunc(iw/10/2)*2:-2:flags=lanczos,scale=iw*10:ih*10:flags=neighbor[$blurName];")
             
-            // הדבקה עם shortest=0 כדי למנוע חיתוך של הוידאו אם הטשטוש "נגמר" לפני הזמן
-            filter.append("[$splitName][$blurName]overlay=x=main_w*${fmt(xRel)}:y=main_h*${fmt(yRel)}:shortest=0$nextStream")
+            filter.append("[$splitName][$blurName]overlay=x=main_w*${fmt(xRel)}:y=main_h*${fmt(yRel)}:shortest=1$nextStream")
             
             currentStream = nextStream
         }
 
-        // --- שלב הלוגו ---
+        // --- לוגו ---
         if (logoPath != null) {
             val scaleCmd = "scale=iw*${fmt(lRelWidth)}:-1"
             
@@ -107,7 +107,9 @@ object MediaProcessor {
             val xCmd = "main_w*${fmt(lX)}"
             val yCmd = "main_h*${fmt(lY)}"
             
-            filter.append("$currentStream[logo]overlay=x=$xCmd:y=$yCmd:shortest=0[v_pre_final]")
+            // shortest=1 אומר: תעצור כשהזרם הכי קצר (הוידאו המקורי) נגמר.
+            // בגלל שעשינו loop ללוגו, הוא אינסופי, אז הוידאו המקורי הוא הקובע.
+            filter.append("$currentStream[logo]overlay=x=$xCmd:y=$yCmd:shortest=1[v_pre_final]")
             currentStream = "[v_pre_final]"
         }
 
@@ -115,7 +117,6 @@ object MediaProcessor {
         if (filter.isNotEmpty()) filter.append(";")
         
         if (isVideo) {
-             // הגנת זוגיות בסוף
              filter.append("${currentStream}scale=trunc(iw/2)*2:trunc(ih/2)*2[v_done]")
         } else {
              filter.append("${currentStream}null[v_done]")
@@ -127,23 +128,23 @@ object MediaProcessor {
         if (isVideo) {
             args.add("-map"); args.add("0:a?") 
             
-            // --- התיקון הקריטי לאורך הוידאו ---
-            // כפיית קצב פריימים של 30FPS. זה מתקן בעיות סנכרון שגורמות לוידאו להיקטע.
-            args.add("-r"); args.add("30")
-            
+            // --- תיקון איכות (High Bitrate) ---
+            args.add("-r"); args.add("30") // FPS קבוע
             args.add("-c:v"); args.add("mpeg4")
-            args.add("-q:v"); args.add("2") 
+            args.add("-b:v"); args.add("8M") // 8 מגה-ביט לשנייה = איכות גבוהה מאוד
+            args.add("-maxrate"); args.add("10M")
+            args.add("-bufsize"); args.add("15M")
             args.add("-pix_fmt"); args.add("yuv420p")
             
             args.add("-c:a"); args.add("aac")
-            args.add("-b:a"); args.add("128k")
+            args.add("-b:a"); args.add("192k") // אודיו איכותי
             args.add("-ac"); args.add("2")
         } else {
             args.add("-c:v"); args.add("png")
         }
         args.add(finalOutputPath)
 
-        showToast(context, "🎬 Processing (High Precision)...")
+        showToast(context, "🎬 High-Quality Processing...")
 
         FFmpegKit.executeWithArgumentsAsync(args.toTypedArray()) { session ->
             safeInput.delete()
