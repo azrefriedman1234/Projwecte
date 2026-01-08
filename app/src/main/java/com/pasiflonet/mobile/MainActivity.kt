@@ -28,7 +28,7 @@ class MainActivity : AppCompatActivity() {
         b = ActivityMainBinding.inflate(layoutInflater)
         setContentView(b.root)
         
-        // התנעת השירות ברקע
+        // התנעת השירות ברקע (שומר נגד תקיעות)
         startService(Intent(this, KeepAliveService::class.java))
         
         b.apiContainer.visibility = View.GONE; b.loginContainer.visibility = View.GONE; b.mainContent.visibility = View.GONE
@@ -97,7 +97,28 @@ class MainActivity : AppCompatActivity() {
         
         b.rvMessages.layoutManager = LinearLayoutManager(this)
         b.rvMessages.adapter = adapter
-        b.btnClearCache.setOnClickListener { cacheDir.deleteRecursively(); Toast.makeText(this,"Cache Cleared",Toast.LENGTH_SHORT).show() }
+        
+        // --- כפתור הניקוי החדש והחכם ---
+        b.btnClearCache.setOnClickListener { 
+            val files = cacheDir.listFiles()
+            var deletedCount = 0
+            var failedCount = 0
+            
+            if (files != null) {
+                for (file in files) {
+                    try {
+                        if (file.isFile && file.delete()) {
+                            deletedCount++
+                        }
+                    } catch (e: Exception) {
+                        failedCount++
+                    }
+                }
+            }
+            
+            val msg = if (deletedCount > 0) "🧹 Cleaned $deletedCount files!" else "✨ Cache is already clean"
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
         
         b.btnSettings.setOnClickListener { 
             try { startActivity(Intent(this, SettingsActivity::class.java)) } 
@@ -123,8 +144,6 @@ class MainActivity : AppCompatActivity() {
                 } 
             } 
         }
-        
-        // תיקון תקיעות: איסוף הודעות ברקע ועדכון UI רק כשיש משהו חדש
         lifecycleScope.launch { 
             TdLibManager.currentMessages.collect { m -> 
                 runOnUiThread { adapter.updateList(m) } 
@@ -138,7 +157,7 @@ class MainActivity : AppCompatActivity() {
             perms.clear()
             perms.add(Manifest.permission.READ_MEDIA_IMAGES)
             perms.add(Manifest.permission.READ_MEDIA_VIDEO)
-            perms.add(Manifest.permission.POST_NOTIFICATIONS) // חובה בשביל השירות
+            perms.add(Manifest.permission.POST_NOTIFICATIONS)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             perms.add(Manifest.permission.FOREGROUND_SERVICE)
