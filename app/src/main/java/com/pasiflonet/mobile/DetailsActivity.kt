@@ -221,7 +221,7 @@ class DetailsActivity : AppCompatActivity() {
                 val extension = if(isVideo) "mp4" else "png"
                 val outputPath = File(cacheDir, "bg_proc_${System.currentTimeMillis()}.$extension").absolutePath
 
-                // הפתרון לקריסה נמצא כאן: פותחים קורוטינה חדשה בתוך ה-Callback
+                // התיקון לקריסה: הוספתי GlobalScope.launch בתוך הסוגריים המסולסלים!
                 MediaProcessor.processContent(applicationContext, finalPath, outputPath, isVideo, rectsSnapshot, logoUri, logoRelXSnapshot, logoRelYSnapshot, relativeWidthSnapshot) { success -> 
                     GlobalScope.launch(Dispatchers.IO) {
                         if (success) {
