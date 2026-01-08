@@ -1,11 +1,9 @@
 package com.pasiflonet.mobile
 
-import android.graphics.Color
 import android.graphics.RectF
 import android.net.Uri
 import android.os.Bundle
 import android.view.MotionEvent
-import android.view.View
 import android.view.ViewTreeObserver
 import android.widget.SeekBar
 import android.widget.Toast
@@ -32,8 +30,13 @@ class DetailsActivity : AppCompatActivity() {
     private var fileId = 0
     private var thumbId = 0
     
-    // גבולות התמונה
     private var imageBounds = RectF()
+    
+    // משתנים לשמירת מיקום יחסי של הלוגו
+    private var savedLogoRelX = 0.5f
+    private var savedLogoRelY = 0.5f
+    private var savedLogoScale = 1.0f
+    
     private var dX = 0f
     private var dY = 0f
 
@@ -56,12 +59,14 @@ class DetailsActivity : AppCompatActivity() {
             if (targetId != 0) startImageHunter(targetId)
             else if (thumbPath != null) loadSharpImage(thumbPath!!)
             
-            // האזנה קבועה לשינויי גודל
-            b.ivPreview.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
-                override fun onGlobalLayout() {
-                    updateImageBounds()
+            // עדכון גבולות כשהמסך משתנה (למשל כשמקלדת נפתחת/נסגרת)
+            b.ivPreview.viewTreeObserver.addOnGlobalLayoutListener {
+                updateImageBounds()
+                // שחזור מיקום הלוגו לפי האחוזים השמורים
+                if (b.ivDraggableLogo.visibility == android.view.View.VISIBLE) {
+                    restoreLogoPosition()
                 }
-            })
+            }
             
             setupTools()
             setupMediaToggle()
@@ -71,11 +76,20 @@ class DetailsActivity : AppCompatActivity() {
 
     private fun updateImageBounds() {
         imageBounds = ViewUtils.getBitmapPositionInsideImageView(b.ivPreview)
-        // אם החישוב נכשל (רוחב 0), נשתמש בגודל ה-View כולו כגיבוי
+        // Fallback למקרה של כישלון
         if (imageBounds.width() <= 0 && b.ivPreview.width > 0) {
             imageBounds.set(0f, 0f, b.ivPreview.width.toFloat(), b.ivPreview.height.toFloat())
         }
         b.drawingView.setValidBounds(imageBounds)
+    }
+    
+    private fun restoreLogoPosition() {
+        if (imageBounds.width() > 0) {
+            val newX = imageBounds.left + (savedLogoRelX * imageBounds.width())
+            val newY = imageBounds.top + (savedLogoRelY * imageBounds.height())
+            b.ivDraggableLogo.x = newX
+            b.ivDraggableLogo.y = newY
+        }
     }
 
     private fun startImageHunter(fileIdToHunt: Int) {
@@ -102,16 +116,14 @@ class DetailsActivity : AppCompatActivity() {
             memoryCachePolicy(CachePolicy.DISABLED)
             diskCachePolicy(CachePolicy.DISABLED)
             crossfade(true)
-            listener(onSuccess = { _, _ ->
-                b.ivPreview.post { updateImageBounds() }
-            })
+            listener(onSuccess = { _, _ -> b.ivPreview.post { updateImageBounds() } })
         }
     }
 
     private fun setupMediaToggle() {
         b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked ->
-            b.vDisabledOverlay.visibility = if (isChecked) View.GONE else View.VISIBLE
-            b.tvTextOnlyLabel.visibility = if (isChecked) View.GONE else View.VISIBLE
+            b.vDisabledOverlay.visibility = if (isChecked) android.view.View.GONE else android.view.View.VISIBLE
+            b.tvTextOnlyLabel.visibility = if (isChecked) android.view.View.GONE else android.view.View.VISIBLE
             b.mediaToolsContainer.alpha = if (isChecked) 1.0f else 0.3f
             enableMediaTools(isChecked)
         }
@@ -119,19 +131,18 @@ class DetailsActivity : AppCompatActivity() {
     
     private fun enableMediaTools(enable: Boolean) {
         b.btnModeBlur.isEnabled = enable; b.btnModeLogo.isEnabled = enable; b.sbLogoSize.isEnabled = enable
-        if (!enable) { b.drawingView.visibility = View.GONE; b.ivDraggableLogo.visibility = View.GONE; b.drawingView.isBlurMode = false }
+        if (!enable) { b.drawingView.visibility = android.view.View.GONE; b.ivDraggableLogo.visibility = android.view.View.GONE; b.drawingView.isBlurMode = false }
     }
 
     private fun setupTools() {
         b.btnModeBlur.setOnClickListener { 
-            b.drawingView.isBlurMode = true; b.drawingView.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f 
-            // וידוא שהגבולות מעודכנים ברגע המעבר למצב ציור
+            b.drawingView.isBlurMode = true; b.drawingView.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 0.5f 
             updateImageBounds()
         }
         
         b.btnModeLogo.setOnClickListener {
             b.drawingView.isBlurMode = false
-            b.ivDraggableLogo.visibility = View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f
+            b.ivDraggableLogo.visibility = android.view.View.VISIBLE; b.ivDraggableLogo.alpha = 1.0f
             
             val prefs = getSharedPreferences("app_prefs", MODE_PRIVATE)
             val uriStr = prefs.getString("logo_uri", null)
@@ -140,8 +151,10 @@ class DetailsActivity : AppCompatActivity() {
             
             b.ivDraggableLogo.post {
                 updateImageBounds()
-                b.ivDraggableLogo.x = imageBounds.centerX() - (b.ivDraggableLogo.width / 2)
-                b.ivDraggableLogo.y = imageBounds.centerY() - (b.ivDraggableLogo.height / 2)
+                // איפוס לאמצע
+                savedLogoRelX = 0.5f - ((b.ivDraggableLogo.width / 2f) / imageBounds.width())
+                savedLogoRelY = 0.5f - ((b.ivDraggableLogo.height / 2f) / imageBounds.height())
+                restoreLogoPosition()
             }
         }
 
@@ -153,11 +166,20 @@ class DetailsActivity : AppCompatActivity() {
                 MotionEvent.ACTION_MOVE -> {
                     var newX = event.rawX + dX
                     var newY = event.rawY + dY
+                    // גבולות
                     if (newX < imageBounds.left) newX = imageBounds.left
                     if (newX + view.width > imageBounds.right) newX = imageBounds.right - view.width
                     if (newY < imageBounds.top) newY = imageBounds.top
                     if (newY + view.height > imageBounds.bottom) newY = imageBounds.bottom - view.height
-                    view.animate().x(newX).y(newY).setDuration(0).start()
+                    
+                    view.x = newX
+                    view.y = newY
+                    
+                    // שמירת מיקום יחסי בזמן אמת!
+                    if (imageBounds.width() > 0) {
+                        savedLogoRelX = (newX - imageBounds.left) / imageBounds.width()
+                        savedLogoRelY = (newY - imageBounds.top) / imageBounds.height()
+                    }
                 }
             }
             true
@@ -168,6 +190,7 @@ class DetailsActivity : AppCompatActivity() {
                 val scale = 0.5f + (p / 50f) 
                 b.ivDraggableLogo.scaleX = scale
                 b.ivDraggableLogo.scaleY = scale
+                savedLogoScale = scale
             }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
             override fun onStopTrackingTouch(sb: SeekBar?) {}
@@ -191,25 +214,18 @@ class DetailsActivity : AppCompatActivity() {
             Toast.makeText(this, "Media not ready!", Toast.LENGTH_SHORT).show(); return 
         }
 
-        // חישוב קריטי לפני שליחה
-        updateImageBounds()
+        // --- שימוש בנתונים השמורים (Safe Mode) ---
+        // אנחנו לא מחשבים מחדש לפי ה-View כי הוא אולי זז.
+        // אנחנו משתמשים ב-savedLogoRelX/Y וברשימת הריבועים היחסית של DrawingView.
         
-        val logoX = b.ivDraggableLogo.x - imageBounds.left
-        val logoY = b.ivDraggableLogo.y - imageBounds.top
-        val relX = logoX / imageBounds.width()
-        val relY = logoY / imageBounds.height()
-        val relativeWidth = (b.ivDraggableLogo.width * b.ivDraggableLogo.scaleX) / imageBounds.width()
+        // חישוב רוחב לוגו יחסי
+        // שים לב: אנחנו מניחים שהיחס בין גודל הלוגו לגודל התמונה נשמר
+        updateImageBounds() // רק כדי לוודא שאין 0
+        val relativeWidth = (b.ivDraggableLogo.width * savedLogoScale) / imageBounds.width()
         
-        val rects = b.drawingView.getRectsRelative(imageBounds)
+        val rects = b.drawingView.rects // כבר באחוזים!
         val logoUriStr = prefs.getString("logo_uri", null)
         val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
-
-        // בדיקה: האם המשתמש ערך ואין זיהוי?
-        if (includeMedia && rects.isEmpty() && logoUri == null) {
-             // אם אין לוגו מוגדר והמשתמש לא צייר - זה יישלח נקי.
-             // אבל אם המשתמש חושב שהוא שם לוגו (ברירת מחדל) - זה לא יישלח.
-             // כאן המקום להזהיר, אבל נשלח בכל זאת.
-        }
 
         GlobalScope.launch(Dispatchers.IO) {
             if (!includeMedia) {
@@ -225,7 +241,8 @@ class DetailsActivity : AppCompatActivity() {
                     isVideo = isVideo,
                     rects = rects,
                     logoUri = logoUri,
-                    lX = relX, lY = relY,
+                    lX = savedLogoRelX, // שימוש במיקום השמור
+                    lY = savedLogoRelY, // שימוש במיקום השמור
                     lRelWidth = relativeWidth,
                     onComplete = { success ->
                         if (success) {
