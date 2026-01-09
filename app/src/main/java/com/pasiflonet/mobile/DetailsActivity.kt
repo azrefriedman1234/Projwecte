@@ -18,6 +18,7 @@ import com.pasiflonet.mobile.databinding.ActivityDetailsBinding
 import com.pasiflonet.mobile.td.TdLibManager
 import com.pasiflonet.mobile.utils.MediaProcessor
 import com.pasiflonet.mobile.utils.ImageUtils
+import com.pasiflonet.mobile.utils.TranslationManager
 import com.pasiflonet.mobile.utils.BlurRect
 import kotlinx.coroutines.*
 import java.io.File
@@ -29,7 +30,7 @@ import kotlin.coroutines.suspendCoroutine
 
 class DetailsActivity : AppCompatActivity() {
     private lateinit var b: ActivityDetailsBinding
-    private var actualMediaPath: String? = null 
+    private var rawMediaPath: String? = null // הנתיב המקורי (עלול להיות בעייתי)
     private var isVideo = false
     private var fileId = 0
     private var thumbId = 0
@@ -56,13 +57,14 @@ class DetailsActivity : AppCompatActivity() {
         val passedThumbPath = intent.getStringExtra("THUMB_PATH")
         b.etCaption.setText(intent.getStringExtra("CAPTION") ?: "")
 
-        // טעינה מיידית של תצוגה מקדימה
+        // 1. טעינת תצוגה מקדימה מיידית (אם יש)
         if (passedThumbPath != null && File(passedThumbPath).exists()) {
             loadPreview(passedThumbPath)
         } else if (thumbId != 0) {
             startThumbHunter(thumbId)
         }
 
+        // 2. הורדת הקובץ המלא ברקע
         if (fileId != 0) startFullMediaHunter(fileId)
 
         setupTools()
@@ -101,7 +103,7 @@ class DetailsActivity : AppCompatActivity() {
                 if (path != null && File(path).exists()) {
                     val file = File(path)
                     if (file.length() > 50000 || !isVideo) {
-                        actualMediaPath = path
+                        rawMediaPath = path // שומרים את הנתיב הגולמי
                         if (!isVideo) withContext(Dispatchers.Main) { loadPreview(path) }
                         break
                     }
@@ -112,6 +114,24 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun setupTools() {
+        // --- 1. תיקון התרגום: החזרת הכפתור לפעולה ---
+        b.btnTranslate.setOnClickListener {
+            val originalText = b.etCaption.text.toString()
+            if (originalText.isNotEmpty()) {
+                safeToast("Translating...")
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        val translated = TranslationManager.translateToHebrew(originalText)
+                        withContext(Dispatchers.Main) {
+                            b.etCaption.setText(translated)
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) { safeToast("Translation failed") }
+                    }
+                }
+            }
+        }
+
         b.btnModeBlur.setOnClickListener {
             b.drawingView.visibility = View.VISIBLE
             b.drawingView.bringToFront()
@@ -181,8 +201,10 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun performStrictSend() {
-        val path = actualMediaPath
-        if (path == null || !File(path).exists()) {
+        // שימוש בנתיב הגולמי
+        val rawPath = rawMediaPath
+        
+        if (rawPath == null || !File(rawPath).exists()) {
             safeToast("Wait, downloading video...")
             return
         }
@@ -192,9 +214,17 @@ class DetailsActivity : AppCompatActivity() {
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val outPath = File(cacheDir, "out_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
-                val rects = b.drawingView.rects.map { BlurRect(it.left, it.top, it.right, it.bottom) }
+                // --- 2. Sandbox: העתקת הקובץ למקום בטוח (Cache) ---
+                // זה מבטיח שהנתיב תקין, ללא תלות ב-Termux או CI
+                val safeInputFile = File(cacheDir, "safe_input.${if(isVideo) "mp4" else "jpg"}")
+                File(rawPath).copyTo(safeInputFile, overwrite = true)
+                val safeInputPath = safeInputFile.absolutePath
+
+                // קובץ הפלט
+                val outPath = File(cacheDir, "safe_out_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
                 
+                // נתונים לציור
+                val rects = b.drawingView.rects.map { BlurRect(it.left, it.top, it.right, it.bottom) }
                 var logoUri: Uri? = null
                 if (b.ivDraggableLogo.visibility == View.VISIBLE) {
                      try {
@@ -206,31 +236,30 @@ class DetailsActivity : AppCompatActivity() {
                          }
                      } catch(e: Exception) {}
                 }
-
                 val relW = if (imageBounds.width() > 0) b.ivDraggableLogo.width.toFloat() / imageBounds.width() else 0.2f
 
-                // --- ביצוע העיבוד ---
+                // --- שליחה למעבד עם הנתיב ה"מולבן" (safeInputPath) ---
                 val success = if (isVideo) {
                     try {
                         suspendCoroutine { cont -> 
-                            MediaProcessor.processContent(applicationContext, path, outPath, true, rects, logoUri, savedLogoRelX, savedLogoRelY, relW) { cont.resume(it) } 
+                            MediaProcessor.processContent(applicationContext, safeInputPath, outPath, true, rects, logoUri, savedLogoRelX, savedLogoRelY, relW) { cont.resume(it) } 
                         }
                     } catch (e: Exception) { false }
                 } else {
-                    ImageUtils.processImage(applicationContext, path, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
+                    ImageUtils.processImage(applicationContext, safeInputPath, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
                 }
 
                 withContext(Dispatchers.Main) {
-                    // --- לוגיקה קשוחה: שולחים רק אם הצליח ---
+                    // שולחים רק אם הצליח והקובץ קיים
                     if (success && File(outPath).exists() && File(outPath).length() > 0) {
                         val target = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("target_username", "") ?: ""
+                        // שולחים את outPath שהוא בוודאות ב-cacheDir ותקין
                         TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), outPath, isVideo)
                         finish()
                     } else {
-                        // כישלון: מחזירים למסך העריכה
                         b.loadingOverlay.visibility = View.GONE
                         b.btnSend.isEnabled = true
-                        safeToast("❌ Editing Failed! Original NOT sent.")
+                        safeToast("❌ Edit Failed. Not sent.")
                     }
                 }
             } catch (e: Exception) {
