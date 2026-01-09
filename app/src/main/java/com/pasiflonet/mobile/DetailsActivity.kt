@@ -2,6 +2,7 @@ package com.pasiflonet.mobile
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.graphics.RectF
 import android.net.Uri
@@ -49,30 +50,27 @@ class DetailsActivity : AppCompatActivity() {
         isVideo = intent.getBooleanExtra("IS_VIDEO", false)
         fileId = intent.getIntExtra("FILE_ID", 0)
         thumbId = intent.getIntExtra("THUMB_ID", 0)
+        
+        // קודם כל ולפני הכל: נתיב התמונה הממוזערת שהתקבל מהמסך הקודם
+        val passedThumbPath = intent.getStringExtra("THUMB_PATH")
         b.etCaption.setText(intent.getStringExtra("CAPTION") ?: "")
 
-        // --- תיקון: טעינת תמונה ממוזערת מיידית (Mini Thumb) ---
-        val miniThumb = intent.getByteArrayExtra("MINI_THUMB")
-        if (miniThumb != null && miniThumb.isNotEmpty()) {
-            // טעינה מהירה מהזיכרון
-            b.ivPreview.load(miniThumb) {
-                listener(onSuccess = { _, _ -> b.ivPreview.post { calculateMatrixBounds() } })
-            }
-        }
+        Log.d("Details", "Opening with ThumbPath: $passedThumbPath")
 
-        // --- נסיון לטעון תמונה איכותית יותר אם קיימת ---
-        val path = intent.getStringExtra("THUMB_PATH")
-        if (path != null && File(path).exists()) {
-            actualMediaPath = path
-            b.ivPreview.load(File(path)) {
-                listener(onSuccess = { _, _ -> b.ivPreview.post { calculateMatrixBounds() } })
+        // 1. טעינה מיידית של התמונה הממוזערת (כמו פעם)
+        if (passedThumbPath != null && File(passedThumbPath).exists()) {
+            // זה הנתיב שראית במסך הקודם - מציגים אותו מיד
+            b.ivPreview.load(File(passedThumbPath)) {
+                listener(onSuccess = { _, _ -> 
+                    b.ivPreview.post { calculateMatrixBounds() } 
+                })
             }
         } else if (thumbId != 0) {
-            // אם אין נתיב, מורידים את ה-Thumbnail הגדול
+            // אם הנתיב לא עבר, אבל יש מזהה - מורידים אותו דחוף
             startThumbHunter(thumbId)
         }
 
-        // במקביל - מורידים את המדיה המלאה (וידאו/תמונה מקורית) לצרכי שליחה
+        // 2. ברקע - מתחילים להוריד את הקובץ המלא (וידאו/תמונה גדולה) לשליחה
         if (fileId != 0) startFullMediaHunter(fileId)
 
         setupTools()
@@ -91,7 +89,7 @@ class DetailsActivity : AppCompatActivity() {
                     }
                     break
                 }
-                delay(1000)
+                delay(500)
             }
         }
     }
@@ -103,11 +101,11 @@ class DetailsActivity : AppCompatActivity() {
                 val path = TdLibManager.getFilePath(fId)
                 if (path != null && File(path).exists()) {
                     val file = File(path)
-                    // וידוא שהקובץ מלא (גדול מ-50KB או שזו תמונה)
+                    // אם זה וידאו וגודל הקובץ הגיוני - שומרים אותו לשליחה
                     if (file.length() > 50000 || !isVideo) {
                         actualMediaPath = path
                         Log.d("Hunter", "Full media ready: $path")
-                        // אם זו תמונה, נעדכן לתצוגה חדה יותר. אם זה וידאו, נשאיר את ה-Thumbnail
+                        // עדכון תצוגה רק אם זו תמונה (כדי לשפר איכות). בוידאו נשארים עם התמונה הממוזערת.
                         if (!isVideo) {
                              withContext(Dispatchers.Main) { 
                                  b.ivPreview.load(file) {
@@ -118,7 +116,7 @@ class DetailsActivity : AppCompatActivity() {
                         break
                     }
                 }
-                delay(1500)
+                delay(1000)
             }
         }
     }
@@ -138,7 +136,6 @@ class DetailsActivity : AppCompatActivity() {
             else { pickLogoLauncher.launch("image/*") }
         }
 
-        // גרירת לוגו
         var dX = 0f; var dY = 0f
         b.ivDraggableLogo.setOnTouchListener { v, event ->
             when (event.action) {
@@ -174,7 +171,6 @@ class DetailsActivity : AppCompatActivity() {
     private fun calculateMatrixBounds() {
         val d = b.ivPreview.drawable ?: return
         val v = FloatArray(9); b.ivPreview.imageMatrix.getValues(v)
-        // חישוב מדויק של גבולות התמונה על המסך
         val scaleX = v[Matrix.MSCALE_X]; val scaleY = v[Matrix.MSCALE_Y]
         val transX = v[Matrix.MTRANS_X]; val transY = v[Matrix.MTRANS_Y]
         val w = d.intrinsicWidth * scaleX; val h = d.intrinsicHeight * scaleY
@@ -192,7 +188,7 @@ class DetailsActivity : AppCompatActivity() {
     private fun performSafeSend() {
         val path = actualMediaPath
         if (path == null || !File(path).exists()) {
-            safeToast("Wait, downloading full quality media...")
+            safeToast("Downloading full video, please wait...")
             return
         }
 
@@ -207,7 +203,6 @@ class DetailsActivity : AppCompatActivity() {
                 val logoUriStr = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("logo_uri", null)
                 val logoUri = if (logoUriStr != null) Uri.parse(logoUriStr) else null
                 
-                // ברירת מחדל לרוחב לוגו אם לא חושב (20% מהרוחב)
                 val relW = if (imageBounds.width() > 0) b.ivDraggableLogo.width.toFloat() / imageBounds.width() else 0.2f
 
                 val success = if (isVideo) {
@@ -220,7 +215,6 @@ class DetailsActivity : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     val target = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("target_username", "") ?: ""
-                    // אם העיבוד הצליח שולחים את המעובד, אחרת את המקור
                     TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), if (success) outPath else path, isVideo)
                     finish()
                 }
