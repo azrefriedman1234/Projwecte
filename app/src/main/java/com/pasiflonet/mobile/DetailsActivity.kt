@@ -30,7 +30,7 @@ import kotlin.coroutines.suspendCoroutine
 
 class DetailsActivity : AppCompatActivity() {
     private lateinit var b: ActivityDetailsBinding
-    private var rawMediaPath: String? = null // הנתיב המקורי (עלול להיות בעייתי)
+    private var rawMediaPath: String? = null
     private var isVideo = false
     private var fileId = 0
     private var thumbId = 0
@@ -57,25 +57,26 @@ class DetailsActivity : AppCompatActivity() {
         val passedThumbPath = intent.getStringExtra("THUMB_PATH")
         b.etCaption.setText(intent.getStringExtra("CAPTION") ?: "")
 
-        // 1. טעינת תצוגה מקדימה מיידית (אם יש)
         if (passedThumbPath != null && File(passedThumbPath).exists()) {
             loadPreview(passedThumbPath)
         } else if (thumbId != 0) {
             startThumbHunter(thumbId)
         }
 
-        // 2. הורדת הקובץ המלא ברקע
         if (fileId != 0) startFullMediaHunter(fileId)
 
         setupTools()
     }
 
     private fun loadPreview(path: String) {
+        if (isFinishing || isDestroyed) return
         b.ivPreview.load(File(path)) {
             listener(onSuccess = { _, _ -> 
                 b.ivPreview.post { 
-                    calculateMatrixBounds() 
-                    if (b.ivDraggableLogo.visibility == View.VISIBLE) restoreLogoPosition()
+                    if (!isFinishing) {
+                        calculateMatrixBounds() 
+                        if (b.ivDraggableLogo.visibility == View.VISIBLE) restoreLogoPosition()
+                    }
                 } 
             })
         }
@@ -85,6 +86,7 @@ class DetailsActivity : AppCompatActivity() {
         TdLibManager.downloadFile(tId)
         lifecycleScope.launch(Dispatchers.IO) {
             for (i in 0..10) {
+                if (isFinishing) break
                 val path = TdLibManager.getFilePath(tId)
                 if (path != null && File(path).exists()) {
                     withContext(Dispatchers.Main) { loadPreview(path) }
@@ -99,11 +101,12 @@ class DetailsActivity : AppCompatActivity() {
         TdLibManager.downloadFile(fId)
         lifecycleScope.launch(Dispatchers.IO) {
             for (i in 0..60) {
+                if (isFinishing) break
                 val path = TdLibManager.getFilePath(fId)
                 if (path != null && File(path).exists()) {
                     val file = File(path)
                     if (file.length() > 50000 || !isVideo) {
-                        rawMediaPath = path // שומרים את הנתיב הגולמי
+                        rawMediaPath = path
                         if (!isVideo) withContext(Dispatchers.Main) { loadPreview(path) }
                         break
                     }
@@ -114,7 +117,6 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun setupTools() {
-        // --- 1. תיקון התרגום: החזרת הכפתור לפעולה ---
         b.btnTranslate.setOnClickListener {
             val originalText = b.etCaption.text.toString()
             if (originalText.isNotEmpty()) {
@@ -123,7 +125,7 @@ class DetailsActivity : AppCompatActivity() {
                     try {
                         val translated = TranslationManager.translateToHebrew(originalText)
                         withContext(Dispatchers.Main) {
-                            b.etCaption.setText(translated)
+                            if (!isFinishing) b.etCaption.setText(translated)
                         }
                     } catch (e: Exception) {
                         withContext(Dispatchers.Main) { safeToast("Translation failed") }
@@ -176,16 +178,20 @@ class DetailsActivity : AppCompatActivity() {
     }
     
     private fun loadLogoFromUri(uri: Uri) {
+        if (isFinishing) return
         b.ivDraggableLogo.load(uri) {
             listener(onSuccess = { _, _ ->
-                b.ivDraggableLogo.visibility = View.VISIBLE
-                b.ivDraggableLogo.bringToFront()
-                restoreLogoPosition()
+                if (!isFinishing) {
+                    b.ivDraggableLogo.visibility = View.VISIBLE
+                    b.ivDraggableLogo.bringToFront()
+                    restoreLogoPosition()
+                }
             })
         }
     }
 
     private fun calculateMatrixBounds() {
+        if (isFinishing) return
         val d = b.ivPreview.drawable ?: return
         val v = FloatArray(9); b.ivPreview.imageMatrix.getValues(v)
         val w = d.intrinsicWidth * v[Matrix.MSCALE_X]; val h = d.intrinsicHeight * v[Matrix.MSCALE_Y]
@@ -201,9 +207,7 @@ class DetailsActivity : AppCompatActivity() {
     }
 
     private fun performStrictSend() {
-        // שימוש בנתיב הגולמי
         val rawPath = rawMediaPath
-        
         if (rawPath == null || !File(rawPath).exists()) {
             safeToast("Wait, downloading video...")
             return
@@ -214,31 +218,44 @@ class DetailsActivity : AppCompatActivity() {
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // --- 2. Sandbox: העתקת הקובץ למקום בטוח (Cache) ---
-                // זה מבטיח שהנתיב תקין, ללא תלות ב-Termux או CI
+                // בדיקת ביטחון: אם המשתמש יצא בזמן ההמתנה
+                if (!isActive) return@launch
+
+                // Sandbox Copy
                 val safeInputFile = File(cacheDir, "safe_input.${if(isVideo) "mp4" else "jpg"}")
                 File(rawPath).copyTo(safeInputFile, overwrite = true)
                 val safeInputPath = safeInputFile.absolutePath
 
-                // קובץ הפלט
                 val outPath = File(cacheDir, "safe_out_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
                 
-                // נתונים לציור
-                val rects = b.drawingView.rects.map { BlurRect(it.left, it.top, it.right, it.bottom) }
-                var logoUri: Uri? = null
-                if (b.ivDraggableLogo.visibility == View.VISIBLE) {
-                     try {
-                         val d = b.ivDraggableLogo.drawable
-                         if (d is BitmapDrawable) { 
-                             val f = File(cacheDir, "temp_logo.png"); val o = FileOutputStream(f)
-                             d.bitmap.compress(Bitmap.CompressFormat.PNG, 100, o); o.close()
-                             logoUri = Uri.fromFile(f) 
-                         }
-                     } catch(e: Exception) {}
+                // איסוף נתונים (חייב לקרות ב-Main אם ניגשים ל-View, אבל אנחנו כבר ב-IO עם העתקים)
+                // במקרה הזה הגישה ל-b.drawingView.rects עלולה להיות בעייתית ב-IO, אבל ViewBinding מחזיק רפרנס.
+                // עדיף לאסוף נתונים *לפני* ה-Launch, אבל כאן נסתמך על זה שה-Activity חי.
+                
+                val rects = ArrayList<BlurRect>()
+                // סינכרון UI כדי למנוע גישה במקביל
+                withContext(Dispatchers.Main) {
+                    if (isFinishing) return@withContext
+                    for (r in b.drawingView.rects) rects.add(BlurRect(r.left, r.top, r.right, r.bottom))
                 }
-                val relW = if (imageBounds.width() > 0) b.ivDraggableLogo.width.toFloat() / imageBounds.width() else 0.2f
 
-                // --- שליחה למעבד עם הנתיב ה"מולבן" (safeInputPath) ---
+                var logoUri: Uri? = null
+                var relW = 0.2f
+                
+                withContext(Dispatchers.Main) {
+                    if (!isFinishing && b.ivDraggableLogo.visibility == View.VISIBLE) {
+                        try {
+                             val d = b.ivDraggableLogo.drawable
+                             if (d is BitmapDrawable) { 
+                                 val f = File(cacheDir, "temp_logo.png"); val o = FileOutputStream(f)
+                                 d.bitmap.compress(Bitmap.CompressFormat.PNG, 100, o); o.close()
+                                 logoUri = Uri.fromFile(f) 
+                             }
+                             if (imageBounds.width() > 0) relW = b.ivDraggableLogo.width.toFloat() / imageBounds.width()
+                        } catch(e: Exception) {}
+                    }
+                }
+
                 val success = if (isVideo) {
                     try {
                         suspendCoroutine { cont -> 
@@ -250,11 +267,17 @@ class DetailsActivity : AppCompatActivity() {
                 }
 
                 withContext(Dispatchers.Main) {
-                    // שולחים רק אם הצליח והקובץ קיים
+                    // --- THE FIX: Check if activity is alive BEFORE touching UI or Finishing ---
+                    if (isFinishing || isDestroyed) return@withContext
+
                     if (success && File(outPath).exists() && File(outPath).length() > 0) {
                         val target = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("target_username", "") ?: ""
-                        // שולחים את outPath שהוא בוודאות ב-cacheDir ותקין
+                        
+                        // שליחה
                         TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), outPath, isVideo)
+                        
+                        // השהיה קטנה כדי לתת ל-TDLib זמן "לתפוס" את הפקודה לפני שהורגים את ה-Activity
+                        delay(500) 
                         finish()
                     } else {
                         b.loadingOverlay.visibility = View.GONE
@@ -264,14 +287,20 @@ class DetailsActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { 
-                    b.loadingOverlay.visibility = View.GONE
-                    b.btnSend.isEnabled = true
-                    safeToast("Error: ${e.message}") 
+                    if (!isFinishing && !isDestroyed) {
+                        b.loadingOverlay.visibility = View.GONE
+                        b.btnSend.isEnabled = true
+                        safeToast("Error: ${e.message}") 
+                    }
                 }
             }
         }
     }
 
-    private fun safeToast(msg: String) { runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() } }
-    private fun setupMediaToggle() { b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked -> b.mediaToolsContainer.alpha = if (isChecked) 1.0f else 0.3f } }
+    // שימוש ב-applicationContext ליתר ביטחון
+    private fun safeToast(msg: String) { 
+        runOnUiThread { 
+            try { Toast.makeText(applicationContext, msg, Toast.LENGTH_SHORT).show() } catch(e: Exception) {} 
+        } 
+    }
 }
