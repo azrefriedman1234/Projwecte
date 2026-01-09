@@ -3,13 +3,12 @@ package com.pasiflonet.mobile
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.RectF
-import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -22,26 +21,25 @@ import com.pasiflonet.mobile.utils.ImageUtils
 import com.pasiflonet.mobile.utils.BlurRect
 import kotlinx.coroutines.*
 import java.io.File
-import java.io.FileOutputStream
 import java.util.ArrayList
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
 class DetailsActivity : AppCompatActivity() {
     private lateinit var b: ActivityDetailsBinding
-    private var actualMediaPath: String? = null // הקובץ המלא (וידאו/תמונה)
+    private var actualMediaPath: String? = null 
     private var isVideo = false
     private var fileId = 0
     private var thumbId = 0
     private var imageBounds = RectF()
-    private var savedLogoRelX = 0.5f; private var savedLogoRelY = 0.5f; private var savedLogoScale = 1.0f
+    private var savedLogoRelX = 0.5f; private var savedLogoRelY = 0.5f
 
     private val pickLogoLauncher = registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (e: Exception) {}
             getSharedPreferences("app_prefs", MODE_PRIVATE).edit().putString("logo_uri", uri.toString()).apply()
             b.ivDraggableLogo.load(uri)
-            b.ivDraggableLogo.visibility = android.view.View.VISIBLE
+            b.ivDraggableLogo.visibility = View.VISIBLE
         }
     }
 
@@ -50,73 +48,90 @@ class DetailsActivity : AppCompatActivity() {
         b = ActivityDetailsBinding.inflate(layoutInflater)
         setContentView(b.root)
 
+        // קבלת נתונים מהאינטנט
         isVideo = intent.getBooleanExtra("IS_VIDEO", false)
         fileId = intent.getIntExtra("FILE_ID", 0)
         thumbId = intent.getIntExtra("THUMB_ID", 0)
+        val initialThumbPath = intent.getStringExtra("THUMB_PATH")
         b.etCaption.setText(intent.getStringExtra("CAPTION") ?: "")
 
-        // הורדת הקובץ המלא מיד עם הפתיחה
-        if (fileId != 0) {
-            startFullMediaHunter(fileId)
-        } else {
-            actualMediaPath = intent.getStringExtra("THUMB_PATH")
+        Log.d("Details", "Started: isVideo=$isVideo, fileId=$fileId, thumbId=$thumbId")
+
+        // 1. טיפול בתצוגה מקדימה (Thumbnail)
+        if (initialThumbPath != null && File(initialThumbPath).exists()) {
+            b.ivPreview.load(File(initialThumbPath))
+        } else if (thumbId != 0) {
+            startThumbHunter(thumbId)
         }
 
-        // טעינת תצוגה מקדימה (Thumbnail)
-        val initialThumb = intent.getStringExtra("THUMB_PATH")
-        initialThumb?.let { b.ivPreview.load(File(it)) }
+        // 2. הורדת המדיה המלאה
+        if (fileId != 0) {
+            startFullMediaHunter(fileId)
+        }
 
         setupTools()
     }
 
-    private fun startFullMediaHunter(targetId: Int) {
-        TdLibManager.downloadFile(targetId)
+    private fun startThumbHunter(tId: Int) {
+        TdLibManager.downloadFile(tId)
         lifecycleScope.launch(Dispatchers.IO) {
-            // מחכים לקובץ המלא (בדיקה כל חצי שנייה)
-            for (i in 0..30) {
-                val path = TdLibManager.getFilePath(targetId)
+            for (i in 0..10) {
+                val path = TdLibManager.getFilePath(tId)
                 if (path != null && File(path).exists()) {
-                    val file = File(path)
-                    // אם זה וידאו, אנחנו מצפים לקובץ "כבד"
-                    if (isVideo && file.length() < 50000) {
-                        Log.d("Hunter", "File too small, still waiting...")
-                    } else {
-                        Log.d("Hunter", "Full media found: $path (Size: ${file.length()})")
-                        actualMediaPath = path
-                        if (!isVideo) withContext(Dispatchers.Main) { b.ivPreview.load(file) }
-                        break
-                    }
+                    withContext(Dispatchers.Main) { b.ivPreview.load(File(path)) }
+                    break
                 }
                 delay(1000)
             }
         }
     }
 
+    private fun startFullMediaHunter(fId: Int) {
+        TdLibManager.downloadFile(fId)
+        lifecycleScope.launch(Dispatchers.IO) {
+            for (i in 0..60) { // מחכים עד דקה לקובץ מלא
+                val path = TdLibManager.getFilePath(fId)
+                if (path != null && File(path).exists()) {
+                    val file = File(path)
+                    // בדיקה שזה לא קובץ זמני קטן מדי
+                    if (file.length() > 50000 || !isVideo) {
+                        actualMediaPath = path
+                        Log.d("Hunter", "Full media ready: $path")
+                        if (!isVideo) withContext(Dispatchers.Main) { b.ivPreview.load(file) }
+                        break
+                    }
+                }
+                delay(1500)
+            }
+        }
+    }
+
     private fun setupTools() {
-        b.btnModeBlur.setOnClickListener { b.drawingView.visibility = android.view.View.VISIBLE; calculateMatrixBounds() }
+        b.btnModeBlur.setOnClickListener { b.drawingView.visibility = View.VISIBLE; calculateMatrixBounds() }
         b.btnModeLogo.setOnClickListener {
             val uriStr = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("logo_uri", null)
-            if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.visibility = android.view.View.VISIBLE }
+            if (uriStr != null) { b.ivDraggableLogo.load(Uri.parse(uriStr)); b.ivDraggableLogo.visibility = View.VISIBLE }
             else { pickLogoLauncher.launch("image/*") }
         }
         b.btnSend.setOnClickListener { performSafeSend() }
+        b.btnCancel.setOnClickListener { finish() }
     }
 
     private fun performSafeSend() {
-        val pathToSend = actualMediaPath
+        val mediaPath = actualMediaPath
         
-        // הגנה קריטית: אם הקובץ לא ירד או שהוא קטן מדי (Thumbnail)
-        if (pathToSend == null || !File(pathToSend).exists() || (isVideo && File(pathToSend).length() < 50000)) {
-            safeToast("Wait! High quality media still downloading...")
+        // מניעת קריסה: אם אין נתיב, לא עושים כלום
+        if (mediaPath == null || !File(mediaPath).exists()) {
+            safeToast("⚠️ Media still loading, please wait...")
             return
         }
 
-        b.loadingOverlay.visibility = android.view.View.VISIBLE
+        b.loadingOverlay.visibility = View.VISIBLE
         b.btnSend.isEnabled = false
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val outPath = File(cacheDir, "final_out.${if(isVideo) "mp4" else "jpg"}").absolutePath
+                val outPath = File(cacheDir, "processed_${System.currentTimeMillis()}.${if(isVideo) "mp4" else "jpg"}").absolutePath
                 val rects = b.drawingView.rects.map { BlurRect(it.left, it.top, it.right, it.bottom) }
                 
                 val logoUriStr = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("logo_uri", null)
@@ -124,25 +139,27 @@ class DetailsActivity : AppCompatActivity() {
                 
                 val relW = if (imageBounds.width() > 0) b.ivDraggableLogo.width / imageBounds.width() else 0.2f
 
-                Log.d("Process", "Processing REAL file: $pathToSend")
-
+                // עיבוד
                 val success = if (isVideo) {
                     suspendCoroutine { cont -> 
-                        MediaProcessor.processContent(applicationContext, pathToSend, outPath, true, rects, logoUri, savedLogoRelX, savedLogoRelY, relW) { cont.resume(it) } 
+                        MediaProcessor.processContent(applicationContext, mediaPath, outPath, true, rects, logoUri, savedLogoRelX, savedLogoRelY, relW) { cont.resume(it) } 
                     }
                 } else {
-                    ImageUtils.processImage(applicationContext, pathToSend, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
+                    ImageUtils.processImage(applicationContext, mediaPath, outPath, rects, logoUri, savedLogoRelX, savedLogoRelY, relW)
                 }
 
                 withContext(Dispatchers.Main) {
                     val target = getSharedPreferences("app_prefs", MODE_PRIVATE).getString("target_username", "") ?: ""
-                    TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), if (success) outPath else pathToSend, isVideo)
+                    // שליחה סופית - וידוא נתיב לא נאל
+                    val finalPathToSend = if (success && File(outPath).exists()) outPath else mediaPath
+                    TdLibManager.sendFinalMessage(target, b.etCaption.text.toString(), finalPathToSend, isVideo)
                     finish()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { 
-                    b.loadingOverlay.visibility = android.view.View.GONE; b.btnSend.isEnabled = true
-                    safeToast("Error: ${e.message}") 
+                    b.loadingOverlay.visibility = View.GONE
+                    b.btnSend.isEnabled = true
+                    safeToast("Error during send: ${e.message}") 
                 }
             }
         }
@@ -154,12 +171,6 @@ class DetailsActivity : AppCompatActivity() {
         imageBounds.set(v[2], v[5], v[2] + d.intrinsicWidth * v[0], v[5] + d.intrinsicHeight * v[4])
         b.drawingView.setValidBounds(imageBounds)
     }
-    
-    private fun restoreLogoPosition() {
-        b.ivDraggableLogo.x = imageBounds.left + (savedLogoRelX * imageBounds.width())
-        b.ivDraggableLogo.y = imageBounds.top + (savedLogoRelY * imageBounds.height())
-    }
 
     private fun safeToast(msg: String) { runOnUiThread { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() } }
-    private fun setupMediaToggle() { b.swIncludeMedia.setOnCheckedChangeListener { _, isChecked -> b.mediaToolsContainer.alpha = if (isChecked) 1.0f else 0.3f } }
 }
